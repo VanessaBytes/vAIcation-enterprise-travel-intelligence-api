@@ -165,7 +165,12 @@ def run_extract(state: TravelState) -> dict:
 
 
 def run_crawl(state: TravelState) -> dict:
-    """Crawl the most relevant site for comprehensive coverage (deep path only)."""
+    """Crawl the most relevant site for comprehensive coverage (deep path only).
+
+    Note: currently targets the first search result URL. A production
+    implementation would apply source quality scoring before selecting
+    the crawl target.
+    """
     urls = _result_urls(state)
     return {"crawl_results": crawl_tool.invoke({"url": urls[0]}) if urls else {}}
 
@@ -272,9 +277,9 @@ async def travel_readiness(request: TravelQuery):
 
 @app.post("/eval/run")
 async def eval_run():
-    """Run the benchmark suite against the live graph and report routing accuracy.
+    """Run the benchmark suite against the live graph and report routing agreement rate.
 
-    Synchronous and slow by design (26 LLM + Tavily round trips) — this is a
+    Synchronous and slow by design (25 LLM + Tavily round trips) — this is a
     development/regression tool, not a high-traffic endpoint. Each case is
     tagged in LangSmith under run_type="benchmark" for trace inspection.
     """

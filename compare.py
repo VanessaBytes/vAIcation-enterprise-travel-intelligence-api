@@ -11,7 +11,7 @@ note in baseline.py about why we don't hand-count this ourselves).
 
 This script just asks LangSmith for that data, lines up matching case_ids
 from both run types, and prints one consolidated report — instead of opening
-34 individual traces in the UI and comparing them by eye.
+the 9 matched baseline/benchmark pairs in the UI and comparing them by eye.
 
 Run *after* both `baseline.py` and `benchmark.py` (or `/eval/run`) have
 executed at least once, so their traces exist in the project.

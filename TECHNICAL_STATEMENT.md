@@ -24,9 +24,9 @@ The classifier uses structured output with a Literal type constraint — the LLM
 
 I built a 25-case evaluation dataset spanning both workflows and all three routing tiers, with expected routes and evaluation focus notes on every case. I ran the original ReAct agent against a representative sample first to establish a baseline, then ran the routed system against the full set.
 
-First pass: 71% routing accuracy. The classifier was under-routing complex readiness queries — treating multi-domain risk assessments as single-topic lookups. I diagnosed the failure pattern, tightened the classifier prompt with explicit trigger conditions for each tier, and reran.
+First pass: 71% routing agreement rate. The classifier was under-routing complex readiness queries — treating multi-domain risk assessments as single-topic lookups. I diagnosed the failure pattern, tightened the classifier prompt with explicit trigger conditions for each tier, and reran.
 
-Second pass: 84% routing accuracy, 25/25 completed, 0 errors.
+Second pass: 84% routing agreement rate, 25/25 completed, 0 errors.
 
 The before/after comparison from LangSmith showed:
 
@@ -39,16 +39,23 @@ The most striking individual case: "What disruptions are affecting Heathrow airp
 
 **A multi-dimensional evaluation framework.**
 
-Routing accuracy alone doesn't tell the full story. A system can route correctly and still produce a hallucinated or irrelevant answer. To measure output quality independently of routing efficiency, I added two LLM-as-a-judge evaluators running automatically in LangSmith on every trace — Hallucination and Answer Relevance. Both use gpt-5.5 as the judge model, operating asynchronously after each request so evaluation adds zero latency to the serving path.
+Routing agreement rate alone doesn't tell the full story. A system can route correctly and still produce a hallucinated or irrelevant answer. To measure output quality independently of routing efficiency, I configured two LLM-as-a-judge evaluators directly in LangSmith's evaluator UI — running automatically against every tagged trace after each request completes, with zero latency added to the serving path. The evaluators are Hallucination and Answer Relevance, both using gpt-5.5 as the judge model.
 
 Hallucination checks whether every claim in the output is supported by the Tavily evidence that was retrieved — catching cases where the LLM fabricates information not present in the sources. Answer Relevance checks whether the output actually addressed what was asked — catching cases where the system produces a technically grounded response that answers a different question than the one posed.
 
-Together with routing accuracy and the LangSmith efficiency traces, vAIcation's evaluation framework measures four independent dimensions of system quality: did it take the right path, did it run without waste, did it tell the truth, and did it answer the question? That combination — routing efficiency, cost control, hallucination detection, and answer relevance — reflects how enterprise AI teams evaluate production systems at scale, not just whether a demo works.
+Together with routing agreement rate and the LangSmith efficiency traces, vAIcation's evaluation framework measures four independent dimensions of system quality: did it take the right path, did it run without waste, did it tell the truth, and did it answer the question? That combination — routing efficiency, cost control, hallucination detection, and answer relevance — reflects how enterprise AI teams evaluate production systems at scale, not just whether a demo works.
 
 **What this is and what it isn't.**
 
 vAIcation is not a vacation planner. It is a travel intelligence layer for organizations that need to know whether a trip is still viable. The structured JSON output — summary, key findings, risks, recommendations, sources — is designed to be consumed by downstream enterprise systems, not read by end users.
 
-The system has known limitations. The classifier achieves 84% routing accuracy; the remaining misroutes are genuine boundary cases where the distinction between tiers is ambiguous. A production system would address this through few-shot examples or a confidence threshold that escalates uncertain classifications. The synthesize node currently passes truncated retrieval content to the LLM — the production solution is dynamic filtering, letting the model write query-specific filter programs at runtime so only relevant content enters context. Tavily's own benchmarks show this pattern reduces token usage by 3.5x. The evaluation framework also lacks idempotency guarantees — a production implementation would add run-level locking before writing results.
+The system has known limitations:
+
+- **Classifier boundary cases** — the classifier achieves 84% routing agreement against benchmark labels; the remaining misroutes are boundary cases where the distinction between tiers is genuinely ambiguous. A production system would address this through few-shot examples or a confidence threshold that escalates uncertain classifications.
+- **Response schema** — the current schema uses prose lists for risks and recommendations. A production enterprise integration layer would enforce structured operational objects with machine-readable severity levels, issue categories, trip status, evidence, source URLs, and action ownership — so downstream systems can consume results without string parsing.
+- **Crawl source selection** — the crawl node currently targets the first search result URL. A production implementation would apply source quality scoring before selecting the crawl target, prioritizing authoritative sources such as government travel advisories, airline official pages, transit agencies, and established travel intelligence providers.
+- **Context window management** — the synthesize node currently passes truncated retrieval content to the LLM. The production solution is dynamic filtering, letting the model write query-specific filter programs at runtime so only relevant content enters context. Tavily reports that its skill-based dynamic filtering approach used roughly 3.5x fewer tokens than Anthropic PTC on a 50-question DeepSearchQA subset. Source: [Dynamic Filtering: Let the Model Program Its Own Search Filters](https://www.tavily.com/blog/dynamic-filtering-let-the-model-program-its-own-search-filters)
+- **Evaluation idempotency** — the evaluation framework lacks run-level locking. A production implementation would add idempotency guarantees before writing results.
+- **LLM as a judge configuration** — the Hallucination and Answer Relevance evaluators are configured directly in LangSmith's evaluator UI, not in code. A production implementation would version-control evaluator configurations alongside the codebase.
 
 The goal of this submission wasn't to build everything. It was to measure a real problem, implement a focused solution, and demonstrate improvement through evidence. That's how production AI systems get built — not in one pass, but iteratively, with data driving every decision.

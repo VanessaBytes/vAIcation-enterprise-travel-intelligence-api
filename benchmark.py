@@ -134,7 +134,7 @@ def _new_run_id() -> str:
 async def run_benchmark(graph, benchmark_run_id: str | None = None) -> dict:
     """Run every benchmark case through `graph` and grade its routing decision.
 
-    Routing accuracy (`expected_route` vs. `actual_route`) is the one piece of
+    Routing agreement rate (`expected_route` vs. `actual_route`) is the one piece of
     analysis that's genuinely domain-specific — it requires comparing against
     labels from OUR dataset, so it has to be computed here. Everything else
     about how each run executed (latency, LLM/tool-call counts and breakdowns,
@@ -199,7 +199,7 @@ async def run_benchmark(graph, benchmark_run_id: str | None = None) -> dict:
         "errored": len(results) - len(completed),
         "passed": passed,
         "failed": len(completed) - passed,
-        "routing_accuracy": round(passed / len(completed), 2) if completed else 0,
+        "routing_agreement_rate": round(passed / len(completed), 2) if completed else 0,
         "next_step": ('Run `python compare.py` — it pulls latency, LLM-call, and '
                       'tool-call breakdowns for these runs (run_type="benchmark") '
                       'directly from LangSmith and lines them up against the '

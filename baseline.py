@@ -9,15 +9,10 @@ a retrieval depth, so it is NOT scored against `expected_route` — that field
 just rides along so the post-router benchmark (benchmark.py / /eval/run) can
 be compared against these numbers later.
 
-This script measures only what's trivial to measure locally — wall-clock
-latency via a stopwatch, and whether the run completed or errored. It
-deliberately does NOT hand-count LLM calls or tool calls from the returned
-message list: that would mean re-implementing, badly, what LangSmith's
-tracer already records natively for every run (which LLM/tool ran, how many
-times, in what order, and how long each took) — and unlike a hand-rolled
-counter, LangSmith captures it uniformly for both this ReAct agent (which
-returns a message transcript you *could* pick apart) and the routed graph
-(which doesn't return one at all).
+This script measures only whether each case completed or errored. Latency,
+LLM-call counts, and tool-call breakdowns are recorded automatically by
+LangSmith's tracer for every tagged run — compare.py pulls that data
+directly from LangSmith rather than re-measuring it locally.
 
 Every run here is tagged run_type="baseline" with a matching case_id, so
 `compare.py` can pull the LLM/tool-call breakdown for these runs straight
