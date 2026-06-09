@@ -32,8 +32,10 @@ take ~10 minutes and cost meaningfully more for a number that's purely a
 Run: `python baseline.py`
 """
 import asyncio
+import argparse
 import json
 import os
+import uuid
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -47,6 +49,11 @@ BASELINE_SAMPLE_IDS = {1, 3, 5, 9, 13, 17, 18, 20, 23}
 BASELINE_CASES = [case for case in BENCHMARK if case["id"] in BASELINE_SAMPLE_IDS]
 
 
+def _new_run_id() -> str:
+    """Shared comparison key for LangSmith traces from this baseline session."""
+    return str(uuid.uuid4())
+
+
 def _build_baseline_agent():
     llm = ChatOpenAI(model="gpt-5-mini", api_key=os.getenv("OPENAI_API_KEY"))
     return WebAgent().build_graph(
@@ -56,7 +63,7 @@ def _build_baseline_agent():
     )
 
 
-async def run_baseline(agent) -> dict:
+async def run_baseline(agent, benchmark_run_id: str | None = None) -> dict:
     """Drive each sampled case through the baseline agent, tagged for LangSmith.
 
     No metrics are computed here. LangSmith already records, for every tagged
@@ -67,18 +74,22 @@ async def run_baseline(agent) -> dict:
     case_id. This function's only job is to run the queries and tag them
     correctly so they're findable there.
     """
+    benchmark_run_id = benchmark_run_id or _new_run_id()
     errors = []
     for case in BASELINE_CASES:
         try:
             await agent.ainvoke(
                 {"messages": [("user", case["query"])]},
                 config={
-                    "tags": ["baseline", case["workflow"]],
+                    "tags": ["baseline", case["workflow"], case["expected_route"], f"run-{benchmark_run_id}"],
                     "metadata": {
                         "run_type": "baseline",
                         "benchmark_version": "v1",
+                        "benchmark_run_id": benchmark_run_id,
                         "case_id": case["id"],
+                        "workflow": case["workflow"],
                         "expected_route": case["expected_route"],
+                        "evaluation_focus": case["evaluation_focus"],
                     },
                 },
             )
@@ -88,16 +99,25 @@ async def run_baseline(agent) -> dict:
             print(f"[{case['id']}] ERROR — {exc}")
 
     return {
+        "benchmark_run_id": benchmark_run_id,
         "total_cases": len(BASELINE_CASES),
         "errors": errors,
         "next_step": ('Run `python compare.py` — it pulls latency, LLM-call, and '
                       'tool-call breakdowns for these runs (run_type="baseline") '
                       'directly from LangSmith and lines them up against the '
-                      'routed benchmark by matching case_id.'),
+                      'routed benchmark by matching benchmark_run_id and case_id.'),
     }
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run baseline ReAct traces for comparison.")
+    parser.add_argument(
+        "--run-id",
+        default=os.getenv("VAICATION_RUN_ID"),
+        help="Shared comparison id. Reuse this exact id for benchmark.py and compare.py.",
+    )
+    args = parser.parse_args()
+
     agent = _build_baseline_agent()
-    summary = asyncio.run(run_baseline(agent))
+    summary = asyncio.run(run_baseline(agent, benchmark_run_id=args.run_id))
     print(json.dumps(summary, indent=2))

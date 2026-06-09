@@ -19,6 +19,7 @@ executed at least once, so their traces exist in the project.
 Run: `python compare.py`
 """
 import json
+import argparse
 import os
 from collections import Counter
 
@@ -30,11 +31,16 @@ load_dotenv()
 PROJECT = os.getenv("LANGCHAIN_PROJECT")
 
 
-def _root_runs_by_case(client: Client, run_type: str) -> dict:
+def _root_runs_by_case(client: Client, run_type: str, benchmark_run_id: str) -> dict:
     """Top-level runs for a given run_type, keyed by the case_id we tagged them with."""
     runs = client.list_runs(
         project_name=PROJECT,
-        filter=f'has(tags, "{run_type}")',
+        filter=(
+            f'and('
+            f'has(tags, "{run_type}"), '
+            f'eq(metadata.benchmark_run_id, "{benchmark_run_id}")'
+            f')'
+        ),
         is_root=True,
     )
     return {
@@ -71,11 +77,36 @@ def _avg(rows: list, picker) -> float | None:
     return round(sum(values) / len(values), 2) if values else None
 
 
-def build_comparison() -> dict:
+def _avg_pair(rows: list) -> dict:
+    return {
+        "matched_cases": len(rows),
+        "baseline_avg": {
+            "llm_calls": _avg(rows, lambda m: m["baseline"]["llm_calls"]),
+            "tool_calls": _avg(rows, lambda m: m["baseline"]["total_tool_calls"]),
+            "latency_ms": _avg(rows, lambda m: m["baseline"]["latency_ms"]),
+        },
+        "routed_avg": {
+            "llm_calls": _avg(rows, lambda m: m["routed"]["llm_calls"]),
+            "tool_calls": _avg(rows, lambda m: m["routed"]["total_tool_calls"]),
+            "latency_ms": _avg(rows, lambda m: m["routed"]["latency_ms"]),
+        },
+    }
+
+
+def _by_expected_route(rows: list) -> dict:
+    return {
+        route: _avg_pair([row for row in rows if row["expected_route"] == route])
+        for route in ("simple", "research", "deep")
+    }
+
+
+def build_comparison(
+    run_id: str,
+) -> dict:
     client = Client()
 
-    baseline_runs = _root_runs_by_case(client, "baseline")
-    routed_runs = _root_runs_by_case(client, "benchmark")
+    baseline_runs = _root_runs_by_case(client, "baseline", run_id)
+    routed_runs = _root_runs_by_case(client, "benchmark", run_id)
 
     matched = []
     for case_id in sorted(set(baseline_runs) & set(routed_runs)):
@@ -84,25 +115,28 @@ def build_comparison() -> dict:
         matched.append({
             "case_id": case_id,
             "expected_route": routed_run.metadata.get("expected_route"),
+            "workflow": routed_run.metadata.get("workflow"),
+            "evaluation_focus": routed_run.metadata.get("evaluation_focus"),
             "baseline": _trace_breakdown(client, baseline_run),
             "routed": _trace_breakdown(client, routed_run),
         })
 
     return {
-        "matched_cases": len(matched),
-        "baseline_avg": {
-            "llm_calls": _avg(matched, lambda m: m["baseline"]["llm_calls"]),
-            "tool_calls": _avg(matched, lambda m: m["baseline"]["total_tool_calls"]),
-            "latency_ms": _avg(matched, lambda m: m["baseline"]["latency_ms"]),
-        },
-        "routed_avg": {
-            "llm_calls": _avg(matched, lambda m: m["routed"]["llm_calls"]),
-            "tool_calls": _avg(matched, lambda m: m["routed"]["total_tool_calls"]),
-            "latency_ms": _avg(matched, lambda m: m["routed"]["latency_ms"]),
-        },
+        "run_id": run_id,
+        **_avg_pair(matched),
+        "stats_by_expected_complexity": _by_expected_route(matched),
         "matched": matched,
     }
 
 
 if __name__ == "__main__":
-    print(json.dumps(build_comparison(), indent=2))
+    parser = argparse.ArgumentParser(description="Compare baseline and routed traces from LangSmith.")
+    parser.add_argument(
+        "--run-id",
+        default=os.getenv("VAICATION_RUN_ID"),
+        required=os.getenv("VAICATION_RUN_ID") is None,
+        help="Shared comparison id used for both baseline.py and benchmark.py.",
+    )
+    args = parser.parse_args()
+
+    print(json.dumps(build_comparison(args.run_id), indent=2))

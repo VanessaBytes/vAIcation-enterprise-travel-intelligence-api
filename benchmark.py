@@ -21,7 +21,10 @@ module has no import-time dependency on app_v2 — app_v2 imports from here,
 not the other way around.
 """
 import asyncio
+import argparse
 import json
+import os
+import uuid
 
 # expected_route: simple = search only, research = search+extract,
 # deep = search+extract+crawl. Distribution (8/9/8 simple/research/deep,
@@ -123,7 +126,12 @@ BENCHMARK = [
 ]
 
 
-async def run_benchmark(graph) -> dict:
+def _new_run_id() -> str:
+    """Shared comparison key for LangSmith traces from this benchmark session."""
+    return str(uuid.uuid4())
+
+
+async def run_benchmark(graph, benchmark_run_id: str | None = None) -> dict:
     """Run every benchmark case through `graph` and grade its routing decision.
 
     Routing accuracy (`expected_route` vs. `actual_route`) is the one piece of
@@ -134,41 +142,68 @@ async def run_benchmark(graph) -> dict:
     run; compare.py pulls that straight from the trace store by run_type and
     case_id rather than re-measuring it locally.
     """
+    benchmark_run_id = benchmark_run_id or _new_run_id()
     results = []
     for case in BENCHMARK:
-        outcome = await graph.ainvoke(
-            {"query": case["query"], "workflow": case["workflow"]},
-            config={
-                "tags": ["benchmark", case["workflow"], case["expected_route"]],
-                "metadata": {
-                    "run_type": "benchmark",
-                    "benchmark_version": "v1",
-                    "case_id": case["id"],
-                    "expected_route": case["expected_route"],
+        try:
+            outcome = await graph.ainvoke(
+                {"query": case["query"], "workflow": case["workflow"]},
+                config={
+                    "tags": [
+                        "benchmark",
+                        case["workflow"],
+                        case["expected_route"],
+                        f"run-{benchmark_run_id}",
+                    ],
+                    "metadata": {
+                        "run_type": "benchmark",
+                        "benchmark_version": "v1",
+                        "benchmark_run_id": benchmark_run_id,
+                        "case_id": case["id"],
+                        "workflow": case["workflow"],
+                        "expected_route": case["expected_route"],
+                        "evaluation_focus": case["evaluation_focus"],
+                    },
                 },
-            },
-        )
-        actual_route = outcome["query_type"]
-        results.append({
-            "id": case["id"],
-            "workflow": case["workflow"],
-            "query": case["query"],
-            "evaluation_focus": case["evaluation_focus"],
-            "expected_route": case["expected_route"],
-            "actual_route": actual_route,
-            "passed": actual_route == case["expected_route"],
-        })
+            )
+            actual_route = outcome["query_type"]
+            results.append({
+                "id": case["id"],
+                "workflow": case["workflow"],
+                "query": case["query"],
+                "evaluation_focus": case["evaluation_focus"],
+                "expected_route": case["expected_route"],
+                "actual_route": actual_route,
+                "status": "completed",
+                "passed": actual_route == case["expected_route"],
+            })
+        except Exception as exc:
+            results.append({
+                "id": case["id"],
+                "workflow": case["workflow"],
+                "query": case["query"],
+                "evaluation_focus": case["evaluation_focus"],
+                "expected_route": case["expected_route"],
+                "actual_route": None,
+                "status": "error",
+                "passed": False,
+                "error": str(exc),
+            })
 
-    passed = sum(r["passed"] for r in results)
+    completed = [r for r in results if r["status"] == "completed"]
+    passed = sum(r["passed"] for r in completed)
     return {
+        "benchmark_run_id": benchmark_run_id,
         "total_cases": len(results),
+        "completed": len(completed),
+        "errored": len(results) - len(completed),
         "passed": passed,
-        "failed": len(results) - passed,
-        "routing_accuracy": round(passed / len(results), 2),
+        "failed": len(completed) - passed,
+        "routing_accuracy": round(passed / len(completed), 2) if completed else 0,
         "next_step": ('Run `python compare.py` — it pulls latency, LLM-call, and '
                       'tool-call breakdowns for these runs (run_type="benchmark") '
                       'directly from LangSmith and lines them up against the '
-                      'baseline runs by matching case_id.'),
+                      'baseline runs by matching benchmark_run_id and case_id.'),
         "results": results,
     }
 
@@ -176,5 +211,13 @@ async def run_benchmark(graph) -> dict:
 if __name__ == "__main__":
     from app_v2 import travel_graph
 
-    summary = asyncio.run(run_benchmark(travel_graph))
+    parser = argparse.ArgumentParser(description="Run routed LangGraph benchmark traces.")
+    parser.add_argument(
+        "--run-id",
+        default=os.getenv("VAICATION_RUN_ID"),
+        help="Shared comparison id. Reuse this exact id for baseline.py and compare.py.",
+    )
+    args = parser.parse_args()
+
+    summary = asyncio.run(run_benchmark(travel_graph, benchmark_run_id=args.run_id))
     print(json.dumps(summary, indent=2))
