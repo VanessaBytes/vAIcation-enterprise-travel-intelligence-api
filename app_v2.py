@@ -91,14 +91,47 @@ class TravelState(TypedDict):
 
 
 WORKFLOW_FOCUS = {
-    "brief": (
-        "You are producing a trip-planning brief for a business traveler. "
-        "Focus on what they need to know to plan the trip with confidence."
+    "simple": (
+        "You are a precise travel intelligence assistant. "
+        "Answer the query directly and factually based only on the retrieved evidence. "
+        "Be concise. Do not speculate beyond what the sources support. "
+        "If the information is time-sensitive, note when it was last confirmed."
     ),
-    "readiness": (
-        "You are producing a travel-readiness report. Focus on what has CHANGED "
-        "since the trip was likely booked, and what risks or disruptions could "
-        "affect the traveler before or during the trip."
+    "research_brief": (
+        "You are producing a business travel planning brief. "
+        "The traveler or travel manager needs to make a decision — destination choice, "
+        "flight selection, hotel strategy, or logistics planning. "
+        "Structure your findings to support that decision directly. "
+        "Emphasize practical differences, cost signals, and friction points. "
+        "Every recommendation must be specific and actionable, not general advice."
+    ),
+    "research_readiness": (
+        "You are producing a travel disruption assessment for a business traveler. "
+        "Focus on current conditions that could affect an upcoming trip. "
+        "Identify specific disruptions — strikes, delays, cancellations, safety incidents, "
+        "weather events — and assess their likelihood and impact. "
+        "Prioritize recency: a disruption happening today matters more than a historical pattern. "
+        "Every risk must have a corresponding recommended action."
+    ),
+    "deep_brief": (
+        "You are producing an enterprise travel brief for a senior stakeholder. "
+        "This covers a complex trip — multiple destinations, multiple travelers, "
+        "or a high-stakes business event. "
+        "Structure your findings by destination or leg of the trip. "
+        "Cover logistics, safety, major events, visa friction, and travel timing. "
+        "The output should be ready to share with an executive or travel manager "
+        "without further editing. Be thorough but not verbose."
+    ),
+    "deep_readiness": (
+        "You are producing an enterprise travel risk assessment for a trip that has already been booked. "
+        "Your sole focus is what has changed or could change that affects whether this trip "
+        "should proceed as planned. "
+        "Assess risk across all relevant domains: transport disruptions, safety and security, "
+        "weather, entry requirements, and operational logistics. "
+        "Assign a severity level — low, medium, or high — to each identified risk. "
+        "Weight recent developments more heavily than historical patterns. "
+        "Conclude with an explicit go/no-go recommendation supported by your findings. "
+        "A report without a go/no-go recommendation is incomplete and unacceptable."
     ),
 }
 
@@ -152,8 +185,9 @@ def synthesize(state: TravelState) -> dict:
         if part
     )
 
+    focus_key = state["query_type"] if state["query_type"] == "simple" else f"{state['query_type']}_{state['workflow']}"
     report = reporter_llm.invoke(
-        f"{WORKFLOW_FOCUS[state['workflow']]}\n\n"
+        f"{WORKFLOW_FOCUS[focus_key]}\n\n"
         f"Traveler query: {state['query']}\n\n"
         f"Evidence gathered from live web retrieval:\n{evidence}\n\n"
         "Produce a structured report grounded only in this evidence."

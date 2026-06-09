@@ -37,6 +37,14 @@ The before/after comparison from LangSmith showed:
 
 The most striking individual case: "What disruptions are affecting Heathrow airport this week?" — the ReAct agent used 9 LLM calls and 8 search calls. The routed system used 2 LLM calls and 2 tool calls. Same question, a fraction of the cost, faster answer, structured output.
 
+**A multi-dimensional evaluation framework.**
+
+Routing accuracy alone doesn't tell the full story. A system can route correctly and still produce a hallucinated or irrelevant answer. To measure output quality independently of routing efficiency, I added two LLM-as-a-judge evaluators running automatically in LangSmith on every trace — Hallucination and Answer Relevance. Both use gpt-5.5 as the judge model, operating asynchronously after each request so evaluation adds zero latency to the serving path.
+
+Hallucination checks whether every claim in the output is supported by the Tavily evidence that was retrieved — catching cases where the LLM fabricates information not present in the sources. Answer Relevance checks whether the output actually addressed what was asked — catching cases where the system produces a technically grounded response that answers a different question than the one posed.
+
+Together with routing accuracy and the LangSmith efficiency traces, vAIcation's evaluation framework measures four independent dimensions of system quality: did it take the right path, did it run without waste, did it tell the truth, and did it answer the question? That combination — routing efficiency, cost control, hallucination detection, and answer relevance — reflects how enterprise AI teams evaluate production systems at scale, not just whether a demo works.
+
 **What this is and what it isn't.**
 
 vAIcation is not a vacation planner. It is a travel intelligence layer for organizations that need to know whether a trip is still viable. The structured JSON output — summary, key findings, risks, recommendations, sources — is designed to be consumed by downstream enterprise systems, not read by end users.
