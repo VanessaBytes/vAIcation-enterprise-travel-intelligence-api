@@ -45,10 +45,20 @@ class QueryClassification(BaseModel):
 
     query_type: Literal["simple", "research", "deep"] = Field(
         description=(
-            "'simple' for factual/current-conditions questions answerable with one "
-            "search; 'research' for comparisons or detailed planning needing search "
-            "+ page extraction; 'deep' for full itineraries or comprehensive "
-            "monitoring that warrant search + extraction + crawling."
+            "Choose the LEAST expensive retrieval tier that can still produce "
+            "a complete, source-grounded answer:\n\n"
+            "'simple': one search call is enough. Use for narrow factual lookups, "
+            "single current-condition checks (weather, strikes, advisories), or "
+            "anything answerable from search snippets alone.\n\n"
+            "'research': search + extract. Use for comparisons between 2-3 options, "
+            "synthesis across multiple sources, or planning tasks that need full "
+            "page content from specific URLs.\n\n"
+            "'deep': search + extract + crawl. Use ONLY when the query requires "
+            "monitoring across MULTIPLE risk domains simultaneously (safety AND "
+            "transport AND weather AND entry requirements), OR when the user needs "
+            "a comprehensive go/no-go assessment, OR when a full site needs to be "
+            "mapped for complete coverage. Single-topic queries never need deep "
+            "even if they sound complex."
         )
     )
 
@@ -127,13 +137,17 @@ def run_crawl(state: TravelState) -> dict:
     return {"crawl_results": crawl_tool.invoke({"url": urls[0]}) if urls else {}}
 
 
+def _truncate(content: str, max_chars: int = 15000) -> str:
+    return content[:max_chars] if len(content) > max_chars else content
+
+
 def synthesize(state: TravelState) -> dict:
     """Turn whatever evidence was gathered into the final structured report."""
     evidence = "\n\n".join(
         part for part in (
-            f"SEARCH RESULTS:\n{state.get('search_results')}",
-            f"EXTRACTED PAGE CONTENT:\n{state['extract_results']}" if state.get("extract_results") else "",
-            f"CRAWLED SITE CONTENT:\n{state['crawl_results']}" if state.get("crawl_results") else "",
+            f"SEARCH RESULTS:\n{_truncate(str(state.get('search_results', '')))}",
+            f"EXTRACTED PAGE CONTENT:\n{_truncate(str(state['extract_results']))}" if state.get("extract_results") else "",
+            f"CRAWLED SITE CONTENT:\n{_truncate(str(state['crawl_results']))}" if state.get("crawl_results") else "",
         )
         if part
     )

@@ -35,12 +35,7 @@ def _root_runs_by_case(client: Client, run_type: str, benchmark_run_id: str) -> 
     """Top-level runs for a given run_type, keyed by the case_id we tagged them with."""
     runs = client.list_runs(
         project_name=PROJECT,
-        filter=(
-            f'and('
-            f'has(tags, "{run_type}"), '
-            f'eq(metadata.benchmark_run_id, "{benchmark_run_id}")'
-            f')'
-        ),
+        filter=f'and(has(tags, "{run_type}"), has(tags, "run-{benchmark_run_id}"))',
         is_root=True,
     )
     return {
