@@ -265,10 +265,7 @@ workflows) through the original ReAct agent (`app.py`), tagging each run
 **benchmark.py** runs the full 25-case evaluation set through the routed
 graph, tagging each run `run_type="benchmark"` with a matching `case_id`.
 
-**compare.py** pulls both sets of traces from LangSmith, matches them by
-shared run ID and `case_id`, and prints one consolidated before/after report
-covering the 9 matched pairs — latency, LLM-call counts, and tool-call
-breakdowns.
+**compare.py** pulls both sets of traces from LangSmith, matches them by shared `run_id` and `case_id`, and prints one consolidated before/after report covering the 9 matched pairs — latency, LLM-call counts, and tool-call breakdowns.
 
 Results from the june-08-v2 run:
 
@@ -282,10 +279,17 @@ Research tier specifically: tool calls reduced by 63%, latency reduced by 31%.
 
 ## Benchmark
 
-`benchmark.py` holds a 25-case evaluation set (8 simple / 9 research / 8 deep,
-split 10 brief / 15 readiness) spanning all three routing tiers and both
-workflows. Each case carries an `expected_route` and an `evaluation_focus`
-note, so results are gradable and self-documenting rather than just logged.
+`benchmark.py` holds a 25-case evaluation set spanning all three routing tiers
+and both workflows:
+
+| Tier     | Count | Workflow split        |
+|----------|-------|-----------------------|
+| simple   | 8     | 4 brief / 4 readiness |
+| research | 9     | 4 brief / 5 readiness |
+| deep     | 8     | 2 brief / 6 readiness |
+
+Each case carries an `expected_route` and an `evaluation_focus` note, so
+results are gradable and self-documenting rather than just logged.
 
 Run it standalone:
 
