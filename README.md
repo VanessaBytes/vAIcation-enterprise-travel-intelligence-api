@@ -1,167 +1,171 @@
-# vAIcation — Enterprise Travel Intelligence API
+# vAIcation
 
-vAIcation is an enterprise travel intelligence API that uses Tavily-powered
-live web retrieval and LangSmith observability to help organizations plan,
-validate, and continuously monitor business travel.
+vAIcation is a small travel-intelligence API built on Tavily, LangGraph, and
+LangSmith. The main goal is not itinerary planning. The useful question is:
+after a business trip has been booked, what has changed that might affect it?
 
-Unlike consumer itinerary planners, vAIcation focuses on **travel
-readiness**: identifying what changed after a trip was booked, surfacing
-operational risks, and recommending actions before disruptions affect
-employees. It is not a vacation planner — it's a travel intelligence layer
-for companies that need to know whether a trip is still viable.
+The project started from the provided ReAct-style web agent. That agent had
+Tavily Search, Extract, and Crawl available, but it could call them repeatedly
+with little control over cost or latency. I added tracing first, then replaced
+the open-ended agent loop with a routed graph.
 
 ## Technical Statement
 
-See [TECHNICAL_STATEMENT.md](./TECHNICAL_STATEMENT.md) for the full
-writeup — approach, design decisions, benchmark results, and production
-considerations.
+See [TECHNICAL_STATEMENT.md](./TECHNICAL_STATEMENT.md) for the full writeup:
+what changed, why the routing design was chosen, benchmark results, and what
+would still need work before production.
 
-## Project Structure
+## Files
 
 ```text
-app.py                  # Original base app (ReAct agent) — baseline reference only
-app_v2.py               # Improved routing architecture — main entry point
-baseline.py             # Runs base app against benchmark sample, tags traces in LangSmith
-benchmark.py            # Runs routing graph against full 25-case eval set
-compare.py              # Pulls and compares baseline vs routed traces from LangSmith
-.env.example            # Environment variable template — copy to .env and fill in keys
-TECHNICAL_STATEMENT.md  # Full writeup — approach, decisions, results, limitations
+app.py                  # Original ReAct agent, kept as the baseline
+app_v2.py               # Routed LangGraph implementation
+baseline.py             # Runs the original agent against a benchmark sample
+benchmark.py            # Runs the routed graph against the 25-case eval set
+compare.py              # Pulls baseline/routed trace metrics from LangSmith
+.env.example            # Environment variable template
+TECHNICAL_STATEMENT.md  # Main writeup
+test_routing.py         # Unit tests for routing, scoping, and output contract
 ```
 
-## Approach
+## What Changed
 
-This system was built benchmark-first. Before writing any routing logic,
-LangSmith tracing was added to the base app to establish what was actually
-happening. The first trace showed a simple factual query triggering three
-LLM calls, two search calls, and 22 seconds of latency — the agent looping
-with no exit condition.
+The original app let the model decide which tool to call at each step. That is
+useful for exploration, but it makes serving behavior hard to predict. A simple
+query can still trigger multiple LLM calls and repeated search calls.
 
-That measurement drove every subsequent decision: the routing architecture
-was built to fix a measured problem, not a hypothesized one. A 25-case
-evaluation dataset was created before the routing logic was finalized, so
-improvement could be demonstrated rather than claimed.
+`app_v2.py` uses a small classifier up front. It chooses one of three routes:
 
-Routing agreement rate improved from 71% on the first pass to 84% after classifier
-prompt refinement. Context engineering reduced the problem further by giving
-the synthesis step explicit success criteria per query type. LLM as a judge
-evaluators running automatically on every trace validate output quality
-independently of routing efficiency.
-
-## Architecture
-
-Incoming queries are routed through a deterministic [LangGraph](https://github.com/langchain-ai/langgraph)
-pipeline rather than an open-ended ReAct agent. A classifier decides, once
-and up front, how much live retrieval a query needs — then the graph runs
-only the tools that tier requires, each at most once:
-
-```
-START → classify → search ──┬─→ synthesize                      (simple)
-                            └─→ extract ──┬─→ synthesize         (research)
-                                          └─→ crawl → synthesize (deep)
+```text
+START -> classify -> search -----> synthesize                      (simple)
+                            \-> extract -----> synthesize          (research)
+                                      \-> crawl -> synthesize       (deep)
 ```
 
-| Tier       | Tools run                  | Example                                              |
-|------------|----------------------------|------------------------------------------------------|
-| `simple`   | search                     | "What currency is used in Japan?"                    |
-| `research` | search → extract           | "Compare business class options NYC → Tokyo"         |
-| `deep`     | search → extract → crawl   | "Monitor disruption risks for a NYC → London trip"   |
+| Tier       | Tools run                | Use case                                  |
+|------------|--------------------------|-------------------------------------------|
+| `simple`   | search                   | One factual lookup or current check       |
+| `research` | search, extract          | Comparison or synthesis across pages      |
+| `deep`     | search, extract, crawl   | Multi-domain trip risk assessment         |
 
-The line between `research` and `deep` is *scope*, not topic — "What
-disruptions are affecting Heathrow airport this week?" stays `research`
-(one airport, one synthesis pass), while "Monitor all disruption risks for
-a NYC → London trip" goes `deep` (a full round-trip's worth of
-weather, transit, safety, and operational risk needs the broader crawl
-pass to ground a comprehensive answer).
+The key distinction is scope. A single airport disruption question is usually
+`research`. A full trip readiness question across transport, weather, safety,
+entry rules, and logistics is `deep`.
 
-This replaces an earlier ReAct-agent version where the LLM decided which
-tools to call turn by turn, producing redundant tool calls and 22+ second
-latency even on simple factual queries. Routing the decision into graph
-edges instead of LLM reasoning makes execution predictable, auditable, and
-cheap to run at scale.
+## Trip Context
+
+Readiness checks can include a booked trip:
+
+```json
+{
+  "booking_ref": "PNR-7QF4K2",
+  "traveler": "J. Okafor",
+  "origin": "JFK",
+  "destination": "LHR",
+  "depart_date": "2026-06-15",
+  "return_date": "2026-06-20",
+  "carriers": ["British Airways", "American Airlines"],
+  "hotel": "Sofitel London Heathrow",
+  "booked_at": "2026-05-20"
+}
+```
+
+When trip context is present, readiness search is scoped to what changed since
+`booked_at` and, for narrow routes, biased toward authoritative news sources
+and the booked carriers. In a real deployment, that trip object would come from
+a travel-management or booking system.
+
+## Output Contract
+
+The response is structured for downstream systems, but it deliberately stops
+short of making customer policy decisions. The LLM returns evidence-linked
+facts and recommendations. A separate policy layer should decide owner, alert
+priority, SLA deadline, escalation path, or final trip status.
+
+Example response shape:
+
+```json
+{
+  "query": "Is there a rail strike in the UK this week?",
+  "workflow": "readiness",
+  "classification": "simple",
+  "report": {
+    "summary": "No retrieved source reports a major UK rail strike this week.",
+    "key_findings": [
+      "One retrieved source reports no major UK rail strikes today.",
+      "Another source says no industrial action is currently planned."
+    ],
+    "risks": [
+      {
+        "category": "transport",
+        "severity": "low",
+        "summary": "Local engineering works can still cause disruption even without a national strike.",
+        "affected_leg": null,
+        "evidence_url": "https://www.thetrainline.com/trains/great-britain/industrial-action",
+        "confidence": "medium"
+      }
+    ],
+    "recommendations": [
+      {
+        "action": "Check National Rail Enquiries before travel for live route status.",
+        "rationale": "The retrieved evidence says industrial action is not currently planned, but local works can still affect travel.",
+        "related_risk": "Local engineering works can still cause disruption even without a national strike.",
+        "evidence_url": "https://www.thetrainline.com/trains/great-britain/industrial-action",
+        "confidence": "medium"
+      }
+    ],
+    "sources": [
+      "https://striketracker.app/strikes-in-united-kingdom",
+      "https://www.thetrainline.com/trains/great-britain/industrial-action"
+    ]
+  }
+}
+```
 
 ## Why Tavily
 
-Travel intelligence has a freshness problem. Flight cancellations, rail
-strikes, visa rule changes, travel advisories — these happen today, not six
-months ago when an LLM was trained. A static model cannot answer "is my
-trip still viable?" because it doesn't know what changed this week.
+Travel questions often depend on current web information: strikes, airport
+delays, severe weather, advisories, visa changes, or event-driven hotel demand.
+Tavily is useful here because it returns search, extracted page content, and
+crawl output in a form that is already usable by an LLM.
 
-Tavily is purpose-built for this gap. Unlike generic search APIs that return
-raw HTML full of ads, navigation menus, and noise, Tavily returns clean,
-structured, LLM-ready content optimized for retrieval-augmented generation.
-There is no parsing pipeline to maintain, no scraping infrastructure to
-manage — just grounded, current web intelligence ready for an LLM to reason
-over.
+The three Tavily tools map cleanly to the three routes:
 
-Tavily also provides three distinct retrieval modes that map directly to
-vAIcation's routing tiers:
+- `TavilySearch`: broad current lookup
+- `TavilyExtract`: full content from selected URLs
+- `TavilyCrawl`: broader site retrieval for the deepest route
 
-- **TavilySearch** — fast, broad web search. Ideal for current-condition
-  lookups and single-topic queries. Called on every path.
-- **TavilyExtract** — full page content from specific URLs. Used when search
-  snippets are insufficient and deeper synthesis is needed.
-- **TavilyCrawl** — maps and retrieves an entire site's content. Reserved
-  for comprehensive multi-domain risk assessments where a single page is not
-  enough.
+The router is there to keep those tools from being used when they are not
+needed.
 
-This three-tool architecture is why the simple/research/deep routing tiers
-exist. Each tier uses exactly the Tavily tools the query warrants — no more,
-no less. A simple factual lookup never triggers a crawl. A multi-domain
-risk assessment gets the full retrieval depth it needs.
+## Observability
 
-At enterprise scale this matters economically. Routing tool selection
-efficiently keeps cost per query predictable and low. Without routing, the
-agent makes unpredictable tool selections — often over-retrieving on simple
-queries and under-retrieving on complex ones. At 10,000 queries per day,
-unpredictable retrieval depth means unpredictable cost — which at enterprise
-scale is the difference between a viable and an unviable product.
+LangSmith tracing is enabled through environment variables. The traces are used
+for two things:
 
-## Observability — LangSmith
+- seeing which route and tools fired for each request
+- comparing LLM calls, tool calls, and latency between the original agent and
+  the routed graph
 
-Every request is fully traced through LangSmith with zero additional code —
-configured via environment variables only. Each trace captures every node
-in the graph, every Tavily tool call, every LLM inference, latency at each
-step, token usage, and cost.
+The project also uses LangSmith-hosted LLM-as-judge evaluators for hallucination
+and answer relevance. Those evaluators are configured in the LangSmith UI, not
+version-controlled in this repo.
 
-LangSmith serves three roles in vAIcation:
+## API
 
-- **Tracing** — full execution trace for every query, showing exactly which
-  path the graph took and how long each step took
-- **Observability** — aggregate dashboard showing latency distributions,
-  error rates, token usage, and cost across all queries
-- **Evaluation host** — runs the LLM as a judge evaluators automatically
-  on every trace after the request completes
+| Method | Path                | Purpose                                             |
+|--------|---------------------|-----------------------------------------------------|
+| POST   | `/travel/brief`     | Planning-oriented travel research                   |
+| POST   | `/travel/readiness` | One-time check of what changed since booking        |
+| POST   | `/eval/run`         | Run the benchmark suite                             |
+| GET    | `/health`           | Liveness check                                      |
 
-This is what makes the before/after comparison in `compare.py` possible —
-LangSmith already recorded everything, so the comparison script just pulls
-the data rather than re-measuring it.
-
-## Endpoints
-
-| Method | Path                | Purpose                                                          |
-|--------|---------------------|------------------------------------------------------------------|
-| POST   | `/travel/brief`     | Trip-planning mode — research and plan a trip before booking     |
-| POST   | `/travel/readiness` | Trip-monitoring mode — what's changed since booking, what to do  |
-| POST   | `/eval/run`         | Run the benchmark suite and report routing agreement rate        |
-| GET    | `/health`           | Liveness check                                                   |
-
-Both travel endpoints share the same routing graph; `workflow` only changes
-the lens the final synthesis step applies (plan-the-trip vs.
-what-changed-since-booking) and is passed to the classifier so routing can
-account for it too.
-
-### Roadmap: `/travel/monitor`
-
-A continuous-surveillance endpoint — "keep watching this trip and tell me
-when something changes," as opposed to `/travel/readiness`'s one-time
-snapshot check. This needs trip identity and persisted state to diff against
-on each recurring check, which is meaningfully more than a routing change —
-left for a follow-up iteration once that design is settled.
+Both travel endpoints use the same graph. The `workflow` changes the synthesis
+prompt: planning brief vs. readiness assessment.
 
 ## Setup
 
-Requires **Python 3.10+** (the codebase uses union type syntax and built-in
-generic type hints introduced in 3.10).
+Requires Python 3.10+.
 
 ```bash
 python3 -m venv venv
@@ -169,13 +173,13 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env` and fill in your keys:
+Copy `.env.example` to `.env` and fill in the keys:
 
 ```bash
 cp .env.example .env
 ```
 
-```
+```text
 TAVILY_API_KEY=your_tavily_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
 LANGCHAIN_API_KEY=your_langsmith_api_key_here
@@ -191,7 +195,7 @@ python app_v2.py
 
 The API starts on `http://localhost:8000`.
 
-## Usage
+Example requests:
 
 ```bash
 curl -X POST "http://localhost:8000/travel/brief" \
@@ -203,53 +207,45 @@ curl -X POST "http://localhost:8000/travel/readiness" \
   -d '{"query": "Monitor all disruption risks for a New York to London trip departing June 15"}'
 ```
 
-Both endpoints return a structured JSON report:
+With trip context:
 
-```json
-{
-  "query": "Is there a rail strike in the UK this week?",
-  "workflow": "readiness",
-  "classification": "simple",
-  "report": {
-    "summary": "No — retrieved sources report no major UK rail strikes this week.",
-    "key_findings": [
-      "StrikeTracker (June 2026): no major rail strikes reported in the UK today.",
-      "Trainline (April 2026): no plans for industrial action currently."
-    ],
-    "risks": [
-      "Local engineering works can still cause disruption even without a strike.",
-      "Planned action could be announced after the date of these sources."
-    ],
-    "recommendations": [
-      "Check National Rail Enquiries before travel for live status.",
-      "Allow extra time and monitor operator messages for cancellations."
-    ],
-    "sources": [
-      "https://striketracker.app/strikes-in-united-kingdom",
-      "https://www.thetrainline.com/trains/great-britain/industrial-action"
-    ]
-  }
-}
+```bash
+curl -X POST "http://localhost:8000/travel/readiness" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What operational risks have emerged since this trip was booked?",
+    "trip": {
+      "booking_ref": "PNR-7QF4K2",
+      "traveler": "J. Okafor",
+      "origin": "JFK",
+      "destination": "LHR",
+      "depart_date": "2026-06-15",
+      "return_date": "2026-06-20",
+      "carriers": ["British Airways", "American Airlines"],
+      "hotel": "Sofitel London Heathrow",
+      "booked_at": "2026-05-20"
+    }
+  }'
 ```
 
-## Context Engineering
+## Benchmarks
 
-The synthesis step uses tier-aware and workflow-aware system prompts — five
-distinct prompt configurations based on query complexity and workflow type
-(`simple`, `research_brief`, `research_readiness`, `deep_brief`, `deep_readiness`).
+`benchmark.py` contains 25 labeled cases across the three routes and both
+workflows.
 
-Rather than a single generic instruction, each configuration gives the LLM
-explicit success criteria for that specific type of query. A deep readiness
-query gets a prompt that demands severity-rated risks and an explicit go/no-go
-recommendation. A research planning query gets a prompt anchored to
-decision-making between options. This is context engineering — deliberately
-shaping what the model receives to improve output quality without changing
-the model or adding latency.
+| Tier       | Count | Workflow split        |
+|------------|-------|-----------------------|
+| `simple`   | 8     | 4 brief / 4 readiness |
+| `research` | 9     | 4 brief / 5 readiness |
+| `deep`     | 8     | 2 brief / 6 readiness |
 
-## Baseline & Comparison
+Run the routed benchmark:
 
-Run all three scripts with the same run ID to get a clean paired comparison.
-Run IDs are arbitrary strings you choose — use something meaningful like `june-08-v1`.
+```bash
+python benchmark.py --run-id june-08-v1
+```
+
+Run the original agent sample, then compare matching LangSmith traces:
 
 ```bash
 python baseline.py --run-id june-08-v1
@@ -257,103 +253,62 @@ python benchmark.py --run-id june-08-v1
 python compare.py --run-id june-08-v1
 ```
 
-**baseline.py** replays a representative 9-case sample (3 per tier, both
-workflows) through the original ReAct agent (`app.py`), tagging each run
-`run_type="baseline"` with a matching `case_id`. This establishes the
-"before" reference point.
+The comparison script matches baseline and routed traces by `run_id` and
+`case_id`, then reports LLM-call counts, tool-call counts, and latency.
 
-**benchmark.py** runs the full 25-case evaluation set through the routed
-graph, tagging each run `run_type="benchmark"` with a matching `case_id`.
+### Historical Results
 
-**compare.py** pulls both sets of traces from LangSmith, matches them by shared `run_id` and `case_id`, and prints one consolidated before/after report covering the 9 matched pairs — latency, LLM-call counts, and tool-call breakdowns.
+These numbers are from the June 8 routing build. They are useful as the
+before/after evidence for the original routing change, but they predate later
+schema and grounding edits. Re-run `baseline.py`, `benchmark.py`, and
+`compare.py` with a shared run ID to reproduce current numbers.
 
-Results from the june-08-v2 run:
+| Metric        | Baseline ReAct | Routed graph | Change |
+|---------------|----------------|--------------|--------|
+| Avg LLM calls | 3.0            | 2.0          | -33%   |
+| Avg tool calls| 3.22           | 2.0          | -38%   |
+| Avg latency   | 31.4s          | 26.8s        | -15%   |
 
-| Metric          | Baseline (ReAct) | Routed (vAIcation) | Change  |
-|-----------------|------------------|--------------------|---------|
-| Avg LLM calls   | 3.0              | 2.0                | -33%    |
-| Avg tool calls  | 3.22             | 2.0                | -38%    |
-| Avg latency     | 31.4s            | 26.8s              | -15%    |
+Routing agreement from the same development sequence:
 
-Research tier specifically: tool calls reduced by 63%, latency reduced by 31%.
+| Run        | Agreement | Notes                                      |
+|------------|-----------|--------------------------------------------|
+| june-08-v1 | 71%       | Initial classifier                         |
+| june-08-v2 | 84%       | Classifier prompt tightened                |
+| june-08-v3 | 80%       | Context-engineering pass; expected variance |
 
-## Benchmark
+## Tests
 
-`benchmark.py` holds a 25-case evaluation set spanning all three routing tiers
-and both workflows:
-
-| Tier     | Count | Workflow split        |
-|----------|-------|-----------------------|
-| simple   | 8     | 4 brief / 4 readiness |
-| research | 9     | 4 brief / 5 readiness |
-| deep     | 8     | 2 brief / 6 readiness |
-
-Each case carries an `expected_route` and an `evaluation_focus` note, so
-results are gradable and self-documenting rather than just logged.
-
-Run it standalone:
+The unit tests do not call OpenAI or Tavily. They mock the classifier, reporter,
+and Tavily tools, then run the real compiled graph.
 
 ```bash
-python benchmark.py --run-id june-08-v1
+pytest test_routing.py -v
 ```
 
-Or trigger it over HTTP:
+The tests check:
 
-```bash
-curl -X POST "http://localhost:8000/eval/run"
-```
-
-Either path scores **routing agreement rate** — the percentage of queries where
-the classifier's routing decision matched the expected route label in the
-benchmark dataset — and tags every run in LangSmith under
-`run_type="benchmark"` with a matching `case_id`.
-
-**Note:** the HTTP endpoint auto-generates a run ID returned in the response
-JSON. Use that ID with `compare.py --run-id` to pull the matching traces.
-Only the CLI path lets you pre-specify a run ID for clean pairing with a
-baseline run.
-
-Routing agreement rate across runs:
-
-| Run         | Agreement Rate | Notes                                                        |
-|-------------|----------------|--------------------------------------------------------------|
-| june-08-v1  | 71%            | Baseline classifier                                          |
-| june-08-v2  | 84%            | Improved classifier prompt                                   |
-| june-08-v3  | 80%            | Context engineering added — within margin of LLM variability |
-
-## Evaluation Framework — LLM as a Judge
-
-Beyond routing agreement rate, vAIcation measures output quality through two
-LangSmith LLM-as-a-judge evaluators running automatically on every trace:
-
-- **Hallucination** — checks whether every claim in the output is supported
-  by the Tavily evidence retrieved. Catches cases where the LLM fabricates
-  information not present in the sources.
-- **Answer Relevance** — checks whether the output actually addressed what
-  was asked. Catches cases where the system produces a grounded response
-  that answers a different question than the one posed.
-
-Both evaluators are configured directly in LangSmith's evaluator UI using
-gpt-5.5 as the judge model. They run asynchronously against every tagged
-trace after each request completes — no additional code required, zero
-latency added to the serving path. At enterprise scale, sampling rate can
-be reduced from 100% to control evaluation cost while maintaining quality
-visibility.
+- each route fires the expected tools once
+- readiness search parameters are computed per request
+- trip context reaches synthesis
+- the report schema uses evidence-linked risk/recommendation objects
+- policy fields stay out of the LLM output contract
 
 ## Known Limitations
 
-The current implementation is intentionally focused on routing discipline and
-measurement, not a full enterprise travel platform. Three important production
-gaps remain:
+This is a focused routing and evaluation prototype, not a full travel platform.
+The main gaps are:
 
-- The response schema uses prose lists for `risks` and `recommendations`; a
-  production API should expose machine-readable `trip_status`, severity-rated
-  issues, evidence, source URLs, and action ownership.
-- The crawl node currently targets the first Tavily search result URL; a
-  production implementation should score source quality and domain relevance
-  before selecting a crawl target.
-- `/travel/readiness` is a one-time readiness check. Continuous monitoring
-  would require persisted trip state, scheduled re-checks, and change detection.
-
-See [TECHNICAL_STATEMENT.md](./TECHNICAL_STATEMENT.md) for the fuller production
-evolution path.
+- Under-specified readiness queries can retrieve generic sources. Trip-aware
+  query construction is future work. For example, a vague query with trip
+  context should be rewritten to include the destination, carriers, dates, and
+  relevant risk domains before search.
+- The response schema now emits evidence-linked facts, but customer-specific
+  actions still need a deterministic policy layer for `trip_status`, owner,
+  priority, and SLA.
+- The crawl node currently crawls the first search result. A production version
+  should score source quality before choosing what to crawl.
+- `/travel/readiness` is a one-time check. Continuous monitoring would require
+  persisted trip state, scheduled checks, and diffing against prior results.
+- LangSmith evaluator configuration lives in the UI. A production setup should
+  version those evaluators with the code.

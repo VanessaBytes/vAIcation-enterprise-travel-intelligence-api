@@ -5,7 +5,16 @@ Replaces the open-ended ReAct agent with a deterministic LangGraph pipeline:
 a classifier decides up front how much live-web retrieval a query needs
 (simple / research / deep), and the graph runs only the tools that tier
 requires — each at most once. No redundant tool calls, no open-ended loops.
+
+Readiness queries can also carry a TripContext: the booked trip as a
+structured record. When present, the search is scoped to the trip — only
+sources published since the booking date, biased toward the trip's own
+carriers — so the answer is "what changed since you booked" rather than a
+fresh generic search. In production, TripContext is populated from the
+customer's TMC / booking system (Concur, Navan, Amex GBT, a GDS feed); here
+it's a mock standing in for that upstream source.
 """
+import json
 import os
 from typing import Literal, TypedDict
 
@@ -28,13 +37,57 @@ if not OPENAI_API_KEY:
 
 
 # ---------------------------------------------------------------------------
-# Tools and LLM — built once at startup and shared across requests
+# Tools and LLM — built once at startup and shared across requests.
+# NOTE: only request-invariant settings go on the constructor (api_key,
+# search_depth). Anything that varies per query — time window, domains,
+# topic — is passed at .invoke() time instead, because a value set here would
+# override the per-call value and freeze it for every request.
 # ---------------------------------------------------------------------------
-search_tool = TavilySearch(api_key=TAVILY_API_KEY, search_depth="advanced")
+# max_results is set here (instantiation) because this tool rejects it per-call.
+# 10 (vs the default 5) gives the deep tier enough sources to cover its many
+# risk domains; it's harmless for narrow tiers, which use far fewer.
+search_tool = TavilySearch(api_key=TAVILY_API_KEY, search_depth="advanced", max_results=10)
 extract_tool = TavilyExtract(api_key=TAVILY_API_KEY)
 crawl_tool = TavilyCrawl(api_key=TAVILY_API_KEY, limit=5)  # capped for cost control
 
-llm = ChatOpenAI(model="gpt-5-mini", api_key=OPENAI_API_KEY)
+# Synthesis is the expensive, reasoning-heavy call; classification is a trivial
+# 3-way decision that doesn't need the same model. Splitting them lets you point
+# the classifier at a smaller/faster model (set VAICATION_CLASSIFIER_MODEL) to
+# cut classify latency — observed at ~9s on the synth model — without touching
+# answer quality. Defaults keep both on the same model so nothing breaks.
+SYNTH_MODEL = os.getenv("VAICATION_SYNTH_MODEL", "gpt-5-mini")
+CLASSIFIER_MODEL = os.getenv("VAICATION_CLASSIFIER_MODEL", "gpt-5-mini")
+
+llm = ChatOpenAI(model=SYNTH_MODEL, api_key=OPENAI_API_KEY)
+classifier_base = ChatOpenAI(model=CLASSIFIER_MODEL, api_key=OPENAI_API_KEY)
+
+
+# ---------------------------------------------------------------------------
+# Source maps for scoped readiness search
+# ---------------------------------------------------------------------------
+# Major wire services carry breaking travel-disruption news (strikes, closures,
+# weather events). Safe to restrict to because they're high-volume — a domain
+# filter on these won't starve results the way a niche-site filter would.
+AUTHORITATIVE_NEWS_DOMAINS = ["reuters.com", "apnews.com", "bbc.com"]
+
+# Carrier name -> official domain. Lets a readiness search prefer the airline's
+# own status/operations pages for the trip actually booked.
+CARRIER_DOMAINS = {
+    "american airlines": "aa.com",
+    "british airways": "britishairways.com",
+    "delta": "delta.com",
+    "united": "united.com",
+    "lufthansa": "lufthansa.com",
+    "air france": "airfrance.com",
+    "klm": "klm.com",
+    "emirates": "emirates.com",
+    "singapore airlines": "singaporeair.com",
+}
+
+# NOTE: government travel advisories (travel.state.gov, gov.uk/foreign-travel-
+# advice) are static reference pages, not "news", so they surface better via a
+# targeted extract against a known advisory URL than via news search. Left as a
+# follow-up for the extract node rather than forced into include_domains here.
 
 
 # ---------------------------------------------------------------------------
@@ -63,26 +116,86 @@ class QueryClassification(BaseModel):
     )
 
 
+class TripContext(BaseModel):
+    """A booked trip, as a structured record.
+
+    In production this is populated from the customer's travel management
+    system (Concur/SAP, Navan, Amex GBT) or a GDS booking feed — vAIcation
+    defines the shape it consumes; it does not own the booking data. `booked_at`
+    is the baseline a readiness check diffs current conditions against.
+    """
+
+    booking_ref: str = Field(description="PNR / booking reference from the system of record")
+    traveler: str = Field(description="Traveler name or employee identifier")
+    origin: str = Field(description="Origin airport/city (IATA or name)")
+    destination: str = Field(description="Destination airport/city (IATA or name)")
+    depart_date: str = Field(description="Departure date, YYYY-MM-DD")
+    return_date: str | None = Field(default=None, description="Return date, YYYY-MM-DD")
+    carriers: list[str] = Field(default_factory=list, description="Booked airline(s)")
+    hotel: str | None = Field(default=None, description="Booked accommodation, if any")
+    booked_at: str = Field(description="Date the trip was booked, YYYY-MM-DD — the diff baseline")
+
+
+class EvidenceRisk(BaseModel):
+    """A grounded operational risk extracted from retrieved evidence."""
+
+    category: Literal["transport", "safety", "weather", "health", "entry", "lodging", "event", "other"] = Field(
+        description="Risk domain supported by the retrieved source"
+    )
+    severity: Literal["low", "medium", "high", "unknown"] = Field(
+        description="Impact level supported by the evidence; use unknown if the source does not justify a level"
+    )
+    summary: str = Field(description="Concise risk statement grounded in the cited evidence")
+    affected_leg: str | None = Field(
+        default=None,
+        description="Trip leg, carrier, location, or date affected; null if not established by the evidence"
+    )
+    evidence_url: str = Field(description="Source URL that supports this risk")
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="Confidence based on source specificity, recency, and relevance"
+    )
+
+
+class EvidenceRecommendation(BaseModel):
+    """A grounded recommendation, not an org-policy action assignment."""
+
+    action: str = Field(description="Concrete traveler or travel-team action supported by the evidence")
+    rationale: str = Field(description="Why this action follows from the cited risk/evidence")
+    related_risk: str = Field(description="Short reference to the risk this recommendation addresses")
+    evidence_url: str = Field(description="Source URL that supports the recommendation")
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="Confidence based on source specificity, recency, and relevance"
+    )
+
+
 class TravelIntelligenceReport(BaseModel):
-    """Structured report returned to enterprise callers."""
+    """Structured report returned to enterprise callers.
+
+    The LLM emits only evidence-derived facts and recommendations. Customer-
+    specific policy fields such as owner, SLA, alert priority, and final trip
+    status belong in a deterministic downstream policy layer.
+    """
 
     summary: str = Field(description="Concise executive summary of the findings")
     key_findings: list[str] = Field(description="Bullet-point facts surfaced by retrieval")
-    risks: list[str] = Field(description="Operational risks or disruptions identified")
-    recommendations: list[str] = Field(description="Concrete actions the traveler/org should take")
+    risks: list[EvidenceRisk] = Field(description="Evidence-linked operational risks identified")
+    recommendations: list[EvidenceRecommendation] = Field(
+        description="Evidence-linked actions, excluding org-specific ownership, priority, and SLA fields"
+    )
     sources: list[str] = Field(description="URLs the findings are drawn from")
 
 
-classifier_llm = llm.with_structured_output(QueryClassification)
+classifier_llm = classifier_base.with_structured_output(QueryClassification)
 reporter_llm = llm.with_structured_output(TravelIntelligenceReport)
 
 
 # ---------------------------------------------------------------------------
 # Graph state
 # ---------------------------------------------------------------------------
-class TravelState(TypedDict):
+class TravelState(TypedDict, total=False):
     query: str
     workflow: Literal["brief", "readiness"]
+    trip_context: dict | None  # booked-trip record (readiness only); None if not supplied
     query_type: str
     search_results: dict
     extract_results: dict
@@ -130,27 +243,129 @@ WORKFLOW_FOCUS = {
         "weather, entry requirements, and operational logistics. "
         "Assign a severity level — low, medium, or high — to each identified risk. "
         "Weight recent developments more heavily than historical patterns. "
-        "Conclude with an explicit go/no-go recommendation supported by your findings. "
-        "A report without a go/no-go recommendation is incomplete and unacceptable."
+        "Surface the evidence a downstream policy layer would need to make a go/no-go decision, "
+        "but do not assign final trip status yourself."
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# Per-trip search scoping
+# ---------------------------------------------------------------------------
+def _carrier_domains(carriers: list[str]) -> list[str]:
+    """Map booked carrier names to their official domains, skipping unknowns."""
+    return [d for c in carriers if (d := CARRIER_DOMAINS.get(c.strip().lower()))]
+
+
+def _readiness_search_params(state: TravelState) -> dict:
+    """Build dynamic Tavily params for a readiness search, computed per request.
+
+    Readiness is about "what's new", so we always bias toward recent news.
+    Recency is set from the booking date when a trip is supplied; the *domain*
+    strategy depends on the tier:
+
+      - deep tier covers MANY risk domains at once (transport / safety / weather
+        / health / entry). A hard include_domains filter there starves
+        cross-domain coverage, which leaves gaps the model backfills from
+        training knowledge — i.e. hallucinations. So deep stays broad and widens
+        max_results instead of restricting domains.
+      - narrow tiers (simple / research) are single-topic, so a domain filter
+        cuts noise without starving the answer. There we bias to authoritative
+        wires plus the trip's own carriers.
+    """
+    params: dict = {"topic": "news"}  # readiness == current events / disruptions
+    trip = state.get("trip_context")
+    is_deep = state.get("query_type") == "deep"
+
+    # Recency: exact "since booking" window when we have a trip, else recent week.
+    if trip and trip.get("booked_at"):
+        params["start_date"] = trip["booked_at"]  # YYYY-MM-DD
+    elif not trip:
+        params["time_range"] = "week"
+
+    # Deep covers many risk domains at once, so it stays broad — NO domain filter,
+    # relying on the wider max_results (set at instantiation) for coverage. Narrow
+    # tiers on a known trip filter to authoritative wires + the trip's carriers to
+    # cut noise without starving a single-topic answer.
+    if not is_deep and trip:
+        domains = AUTHORITATIVE_NEWS_DOMAINS + _carrier_domains(trip.get("carriers", []))
+        if domains:
+            params["include_domains"] = domains
+
+    return params
+
+
+# Worked examples that anchor the slippery boundaries — especially research vs
+# deep, where the classifier was flip-flopping. Giving the model a few labeled
+# cases to pattern-match against makes borderline calls far more consistent than
+# letting it decide cold each time.
+#
+# IMPORTANT: these are deliberately DISJOINT from the benchmark eval set. Reusing
+# eval queries here would leak the test answers into the classifier and inflate
+# the routing-agreement rate — the few-shot anchors and the eval cases must stay
+# separate for the benchmark to mean anything.
+CLASSIFIER_FEWSHOT = """\
+Worked examples (query -> route, and why):
+
+- "What time zone is Tokyo in?" -> simple
+  One static fact; a single search answers it.
+- "Is Gatwick airport operating normally today?" -> simple
+  One place, one current-condition check; snippets are enough.
+- "What are travelers saying about the new business lounge at Munich airport?" -> research
+  One topic, but needs synthesis across several pages (search + extract).
+- "Compare Marriott vs Hilton for a business stay in Berlin on price and location." -> research
+  A 2-3 option comparison needing page content, but a single topic. Not deep.
+- "What disruptions are affecting Frankfurt airport this week?" -> research
+  One airport, one synthesis pass. Sounds urgent, but it's single-domain.
+- "Monitor every risk for a round-trip to Frankfurt next week: weather, strikes, safety, entry rules." -> deep
+  Several risk domains at once on a whole trip (search + extract + crawl).
+- "Should the team proceed with the Mumbai offsite given current conditions?" -> deep
+  A go/no-go decision spanning safety, transport, and logistics together.
+
+Decisive rule: research vs deep is about SCOPE, not how serious it sounds. One
+topic or one place stays research; several risk domains together, or an explicit
+go/no-go on a whole trip, is deep."""
 
 
 # ---------------------------------------------------------------------------
 # Nodes — each tool runs at most once, only on the path that needs it
 # ---------------------------------------------------------------------------
 def classify(state: TravelState) -> dict:
-    """Decide, once and up front, how much retrieval this query warrants."""
+    """Decide, once and up front, how much retrieval this query warrants.
+
+    If a route was forced (state already carries query_type), honor it and skip
+    the LLM call. This makes the route deterministic for testing and clean
+    before/after comparisons, instead of fighting classifier nondeterminism on
+    boundary queries.
+    """
+    if state.get("query_type"):
+        return {"query_type": state["query_type"]}
+
+    trip = state.get("trip_context")
+    trip_hint = (
+        f"\nBooked trip: {trip['origin']} -> {trip['destination']}, "
+        f"carriers {trip.get('carriers') or 'n/a'}, booked {trip.get('booked_at')}."
+        if trip else ""
+    )
     classification = classifier_llm.invoke(
-        f"Workflow: {state['workflow']}\n"
-        f"Classify this travel query for routing purposes:\n\n{state['query']}"
+        f"{CLASSIFIER_FEWSHOT}\n\n"
+        f"Now classify this query using the same rule.\n"
+        f"Workflow: {state['workflow']}{trip_hint}\n"
+        f"Query:\n\n{state['query']}"
     )
     return {"query_type": classification.query_type}
 
 
 def run_search(state: TravelState) -> dict:
-    """Every path runs exactly one search — the cheapest read on 'what's true now'."""
-    return {"search_results": search_tool.invoke({"query": state["query"]})}
+    """Every path runs exactly one search — the cheapest read on 'what's true now'.
+
+    Params are assembled at call time (not baked into the tool) so each request
+    gets the scoping its workflow and trip warrant.
+    """
+    params = {"query": state["query"]}
+    if state["workflow"] == "readiness":
+        params.update(_readiness_search_params(state))
+    return {"search_results": search_tool.invoke(params)}
 
 
 def _result_urls(state: TravelState) -> list[str]:
@@ -175,27 +390,83 @@ def run_crawl(state: TravelState) -> dict:
     return {"crawl_results": crawl_tool.invoke({"url": urls[0]}) if urls else {}}
 
 
-def _truncate(content: str, max_chars: int = 15000) -> str:
-    return content[:max_chars] if len(content) > max_chars else content
+# Evidence hygiene caps. Search "content" is a clean snippet, so it needs little.
+# Extract/crawl "raw_content" is the full page including nav bars, related-story
+# sidebars, and ads — capping per page keeps the article body and drops most of
+# that trailing junk, which was both polluting context and tripping the
+# hallucination judge.
+_SNIPPET_CAP = 800       # per clean search snippet
+_PAGE_CAP = 2500         # per extracted/crawled page
+_MAX_PAGES = 3           # extract/crawl pages fed to synthesis
+_EVIDENCE_CAP = 16000    # overall ceiling on the evidence block
+
+
+def _format_results(results: list[dict], cap: int, limit: int | None = None) -> list[str]:
+    """Pull only (url, main text) from each result, capped — never the raw dict.
+
+    Prefers the clean `content` snippet; falls back to `raw_content` (full page)
+    when that's all a tool returns, trimmed to `cap` to shed sidebar/nav noise.
+    """
+    blocks = []
+    for r in (results or [])[: limit or len(results or [])]:
+        url = r.get("url", "")
+        text = (r.get("content") or r.get("raw_content") or "").strip()
+        if text:
+            blocks.append(f"[{url}]\n{text[:cap]}")
+    return blocks
 
 
 def synthesize(state: TravelState) -> dict:
     """Turn whatever evidence was gathered into the final structured report."""
-    evidence = "\n\n".join(
-        part for part in (
-            f"SEARCH RESULTS:\n{_truncate(str(state.get('search_results', '')))}",
-            f"EXTRACTED PAGE CONTENT:\n{_truncate(str(state['extract_results']))}" if state.get("extract_results") else "",
-            f"CRAWLED SITE CONTENT:\n{_truncate(str(state['crawl_results']))}" if state.get("crawl_results") else "",
+    parts: list[str] = []
+    parts += _format_results(state.get("search_results", {}).get("results", []), _SNIPPET_CAP)
+    parts += _format_results(state.get("extract_results", {}).get("results", []), _PAGE_CAP, _MAX_PAGES)
+    parts += _format_results(state.get("crawl_results", {}).get("results", []), _PAGE_CAP, _MAX_PAGES)
+    evidence = "\n\n".join(parts)[:_EVIDENCE_CAP]
+
+    # When a booked trip is present, hand the model the baseline explicitly so it
+    # assesses *change since booking* rather than reporting generic conditions.
+    trip = state.get("trip_context")
+    trip_block = ""
+    if trip:
+        trip_block = (
+            "\n\nBOOKED TRIP (the baseline to assess against):\n"
+            f"{json.dumps(trip, indent=2)}\n"
+            f"Assess what has changed or newly emerged since this trip was booked "
+            f"({trip.get('booked_at')}) that affects whether it should proceed as planned."
         )
-        if part
-    )
 
     focus_key = state["query_type"] if state["query_type"] == "simple" else f"{state['query_type']}_{state['workflow']}"
     report = reporter_llm.invoke(
         f"{WORKFLOW_FOCUS[focus_key]}\n\n"
-        f"Traveler query: {state['query']}\n\n"
+        f"Traveler query: {state['query']}{trip_block}\n\n"
         f"Evidence gathered from live web retrieval:\n{evidence}\n\n"
-        "Produce a structured report grounded only in this evidence."
+        "Produce a structured report grounded only in this evidence.\n"
+        "GROUNDING RULES — follow strictly:\n"
+        "- Every claim, risk, and severity rating must be traceable to a specific "
+        "item in the evidence above. Do not add facts from prior knowledge.\n"
+        "- For every risk and recommendation object, set evidence_url to the exact "
+        "URL in the evidence block that supports it. If no URL supports the object, "
+        "do not include the object.\n"
+        "- Fill only evidence-derived operational fields. Do not invent business "
+        "policy fields such as owner, SLA, alert priority, escalation path, or "
+        "final trip status; those belong to a downstream deterministic policy layer.\n"
+        "- Do not generalize beyond what a source states (e.g. if a source "
+        "describes screening in one country, do not write 'some countries').\n"
+        "- Do not infer cause and effect. If a source reports two facts, do not "
+        "claim one caused, triggered, or prompted the other unless the source "
+        "says so explicitly.\n"
+        "- Recommendations may use only the booked trip details provided and the "
+        "evidence above. Do not assume traveler count, party composition, employer "
+        "or agency procedures, or any logistic detail that was not given.\n"
+        "- If the evidence does not cover a relevant risk domain (transport, "
+        "safety, weather, health, entry requirements), say so explicitly — e.g. "
+        "'No retrieved source addresses weather for this period' — rather than "
+        "inferring or supplying general expectations.\n"
+        "- A shorter report that is fully grounded is better than a complete-"
+        "looking one that speculates.\n"
+        "- Be concise: at most 5 key findings, 5 risks, and 5 recommendations. "
+        "State each point once; do not pad or repeat."
     )
     return {"report": report.model_dump()}
 
@@ -234,6 +505,23 @@ travel_graph = build_graph()
 
 
 # ---------------------------------------------------------------------------
+# Sample trip — a mock standing in for a record the customer's TMC/booking
+# system would supply in production. Used for the /travel/readiness demo.
+# ---------------------------------------------------------------------------
+SAMPLE_TRIP = {
+    "booking_ref": "PNR-7QF4K2",
+    "traveler": "J. Okafor (emp #44218)",
+    "origin": "JFK",
+    "destination": "LHR",
+    "depart_date": "2026-06-15",
+    "return_date": "2026-06-20",
+    "carriers": ["British Airways", "American Airlines"],
+    "hotel": "Sofitel London Heathrow",
+    "booked_at": "2026-05-20",
+}
+
+
+# ---------------------------------------------------------------------------
 # FastAPI
 # ---------------------------------------------------------------------------
 app = FastAPI(title="vAIcation Travel Intelligence API")
@@ -247,17 +535,27 @@ async def health():
 
 class TravelQuery(BaseModel):
     query: str
+    trip: TripContext | None = None  # optional booked-trip context (readiness)
 
 
-async def _run(query: str, workflow: Literal["brief", "readiness"]) -> dict:
+async def _run(
+    query: str,
+    workflow: Literal["brief", "readiness"],
+    trip: TripContext | None = None,
+) -> dict:
     try:
-        result = await travel_graph.ainvoke({"query": query, "workflow": workflow})
+        result = await travel_graph.ainvoke({
+            "query": query,
+            "workflow": workflow,
+            "trip_context": trip.model_dump() if trip else None,
+        })
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
     return {
         "query": query,
         "workflow": workflow,
+        "trip_context": trip.model_dump() if trip else None,
         "classification": result["query_type"],
         "report": result["report"],
     }
@@ -271,8 +569,13 @@ async def travel_brief(request: TravelQuery):
 
 @app.post("/travel/readiness")
 async def travel_readiness(request: TravelQuery):
-    """Trip-monitoring mode — surface what changed since booking and what to do about it."""
-    return await _run(request.query, "readiness")
+    """Trip-monitoring mode — surface what changed since booking and what to do about it.
+
+    Pass `trip` to scope the check to a booked itinerary (search is filtered to
+    sources published since `booked_at` and biased to the trip's carriers). Omit
+    it for a generic readiness check on a recent window.
+    """
+    return await _run(request.query, "readiness", request.trip)
 
 
 @app.post("/eval/run")

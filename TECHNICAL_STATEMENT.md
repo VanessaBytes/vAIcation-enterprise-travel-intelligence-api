@@ -1,61 +1,172 @@
 # vAIcation — Technical Statement
 
-**The problem with the base app wasn't the tools — it was the absence of measurement.**
+## Starting with measurement
 
-The starter application had all three Tavily capabilities available — Search, Extract, and Crawl — but no way to know which ones fired, when, why, or at what cost. Before building anything, that had to be fixed. You can't improve what you can't observe.
+The base app gave the model Tavily Search, Extract, and Crawl and let a ReAct
+loop decide which to call. The first thing I did was turn on LangSmith tracing
+(environment variables only, no code changes) and run a few queries to see what
+it actually did.
 
-The first change was instrumentation. I wired LangSmith tracing into the application via environment variables — zero code changes, full visibility into every LLM call, every tool invocation, latency at each step, and token usage per query. The first trace told me everything I needed to know: a simple factual question — "Who is the Snowflake CEO?" — triggered three LLM calls, two search calls, and took 22 seconds. The agent was looping because nothing told it to stop.
+The traces were enough to point me at the problem. A plain factual question
+routed through three LLM calls and two searches and took about 22 seconds,
+because the loop had no real reason to stop — it kept deciding it could do a
+little better with one more search. That's fine for open-ended research, but it
+means cost and latency are unpredictable per query, and at volume unpredictable
+cost is the thing you actually have to manage.
 
-**The domain choice was deliberate.**
+## Picking a use case
 
-I chose travel intelligence because it's one of the few domains where the value of live web retrieval is non-negotiable. Flights get cancelled. Strikes happen. Visa rules change. Travel advisories get issued. A static LLM cannot answer "is my trip still viable?" — but Tavily can, because it retrieves what's true right now, not what was true at training time. Travel is where Tavily's core capabilities shine.
+I went with travel intelligence because it's a case where live retrieval is the
+whole point. Flights get cancelled, strikes get called, advisories get issued,
+visa rules change. A model trained months ago can't tell you whether a trip you
+booked last week is still a good idea; a current web read can.
 
-I also framed it as an enterprise product rather than a consumer tool. The real problem enterprise mobility teams face isn't planning trips — it's knowing what changed after they booked. vAIcation's `/travel/readiness` endpoint is built around that specific workflow: not "plan me a trip" but "tell me what's different since I committed to this trip."
+I framed it for an enterprise buyer rather than a consumer. The interesting
+problem for a corporate travel team isn't planning a trip — it's knowing what
+changed after they booked it. That's the `/travel/readiness` workflow, as
+opposed to `/travel/brief` for up-front planning.
 
-**The architectural improvement was routing discipline.**
+## Routing instead of looping
 
-The base app used a ReAct agent — a pattern where the LLM decides which tools to call at every step, looping until it feels confident enough to answer. That's fine for exploration but wrong for production. It produces unpredictable cost, unpredictable latency, and no auditability.
+I replaced the ReAct agent with a LangGraph pipeline that makes one routing
+decision up front and then runs a fixed path. A classifier labels each query
+`simple`, `research`, or `deep`, and the graph runs exactly the tools that tier
+needs, each at most once: simple is search; research is search then extract;
+deep is search, extract, then crawl.
 
-I replaced it with a deterministic LangGraph pipeline. A classifier makes one routing decision upfront — simple, research, or deep — based on what the query actually needs. The graph then executes exactly that path, each tool firing at most once. No loops. No redundant calls. No LLM deciding mid-execution to search again because it's not sure.
+The classifier returns a `Literal`, so it can only ever produce one of the three
+valid labels — the routing decision can't drift into free text. The point isn't
+that routing is clever. It's that it makes execution predictable: you can look
+at a query type and know what it will cost before you run it.
 
-The classifier uses structured output with a Literal type constraint — the LLM cannot return anything except one of three valid routing decisions. That's not just prompt engineering, it's a hard architectural guarantee.
+## Trip context
 
-**The benchmark told the real story.**
+A readiness check is more useful when it knows the trip. The `/travel/readiness`
+endpoint accepts an optional structured booked-trip record — route, dates,
+carriers, and the booking date. vAIcation defines the shape it consumes; in a
+real deployment that record comes from the customer's travel-management or
+booking system, not from vAIcation.
 
-I built a 25-case evaluation dataset spanning both workflows and all three routing tiers, with expected routes and evaluation focus notes on every case. I ran the original ReAct agent against a representative sample first to establish a baseline, then ran the routed system against the full set.
+When a trip is present, the booking date becomes the baseline. The search is
+scoped to what was published since `booked_at`, and on the narrower routes it's
+biased toward authoritative news sources and the trip's own carriers. This is
+what makes the readiness check a "since booking" diff rather than a fresh
+generic search.
 
-First pass: 71% routing agreement rate. The classifier was under-routing complex readiness queries — treating multi-domain risk assessments as single-topic lookups. I diagnosed the failure pattern, tightened the classifier prompt with explicit trigger conditions for each tier, and reran.
+## What the benchmark showed
 
-Second pass: 84% routing agreement rate, 25/25 completed, 0 errors.
+I wrote a 25-case set covering all three tiers and both workflows, each case
+labeled with the route I expected. I ran a sample of those queries through the
+original ReAct agent first to get a "before," then ran the routed system against
+the full set.
 
-The before/after comparison from LangSmith showed:
+The routed system used noticeably fewer calls — average LLM calls and tool
+calls both dropped by roughly a third. That's the result I care about most,
+because call count drives cost at volume. Latency improved less, and the routed
+system was still slow in absolute terms; most of that time is the Tavily reads
+and the synthesis call, not the loop, so routing helps the bill more than the
+clock.
 
-- Average LLM calls reduced by 33% (3.0 → 2.0)
-- Average tool calls reduced by 38% (3.22 → 2.0)
-- Average latency reduced by 15% (31.4s → 26.8s)
-- Research tier specifically: tool calls reduced by 63%, latency reduced by 31%
+Two honest caveats on these numbers. The set is only 25 cases, so the
+routing-agreement percentages move by a few points when a single case flips —
+I read them as directional, not precise. And both the benchmark and the live
+path hit the real web, so the exact figures aren't reproducible run to run. The
+specific numbers in the README are labeled as a snapshot from the original
+routing build; they predate the schema and grounding changes described below,
+and `baseline.py` / `benchmark.py` / `compare.py` regenerate current ones.
 
-The most striking individual case: "What disruptions are affecting Heathrow airport this week?" — the ReAct agent used 9 LLM calls and 8 search calls. The routed system used 2 LLM calls and 2 tool calls. Same question, a fraction of the cost, faster answer, structured output.
+## The output contract
 
-**A multi-dimensional evaluation framework.**
+The response is structured so downstream systems can consume it, but it stops
+short of making business decisions. The model returns evidence-linked facts:
+each risk carries a category, severity, summary, affected leg, an evidence URL,
+and a confidence level, and each recommendation carries its own rationale and
+evidence URL. Severity includes an explicit `unknown` value so the model has an
+honest option when the evidence doesn't justify a level.
 
-Routing agreement rate alone doesn't tell the full story. A system can route correctly and still produce a hallucinated or irrelevant answer. To measure output quality independently of routing efficiency, I configured two LLM-as-a-judge evaluators directly in LangSmith's evaluator UI — running automatically against every tagged trace after each request completes, with zero latency added to the serving path. The evaluators are Hallucination and Answer Relevance, both using gpt-5.5 as the judge model.
+What the model does not produce is customer policy — owner, SLA, alert priority,
+escalation path, and final trip status. Those depend on an organization's risk
+tolerance, not on anything in the retrieved evidence, so they belong in a
+deterministic policy layer the customer configures. Keeping them out of the
+model's output also keeps them out of the hallucination surface: the model can't
+fabricate a deadline or an owner if it's never asked to produce one. The short
+version is that the model gives grounded travel risks, and a separate policy
+layer decides what the company does about them.
 
-Hallucination checks whether every claim in the output is supported by the Tavily evidence that was retrieved — catching cases where the LLM fabricates information not present in the sources. Answer Relevance checks whether the output actually addressed what was asked — catching cases where the system produces a technically grounded response that answers a different question than the one posed.
+## Measuring quality, and what it caught
 
-Together with routing agreement rate and the LangSmith efficiency traces, vAIcation's evaluation framework measures four independent dimensions of system quality: did it take the right path, did it run without waste, did it tell the truth, and did it answer the question? That combination — routing efficiency, cost control, hallucination detection, and answer relevance — reflects how enterprise AI teams evaluate production systems at scale, not just whether a demo works.
+Routing the right way doesn't guarantee a good answer, so I added two
+LLM-as-judge evaluators in LangSmith — one for hallucination (is every claim
+backed by retrieved evidence) and one for answer relevance (did it answer the
+question that was asked). They run against tagged traces after the request
+finishes, so they add no latency to serving.
 
-**What this is and what it isn't.**
+The hallucination evaluator earned its place by failing a live readiness query.
+On a booked JFK–LHR trip, the report asserted that an event "prompted" a
+screening rule the source never connected causally, generalized a single
+country's measures into "some countries," and rated generic travel concerns as
+trip-specific "Medium" risks. The judge flagged it, and the trace let me work
+backwards through why.
 
-vAIcation is not a vacation planner. It is a travel intelligence layer for organizations that need to know whether a trip is still viable. The structured JSON output — summary, key findings, risks, recommendations, sources — is designed to be consumed by downstream enterprise systems, not read by end users.
+There turned out to be several layers, not one bug:
 
-The system has known limitations:
+- The synthesis prompt was under-constrained, so the model filled gaps with
+  general knowledge and inferred causation the sources didn't state.
+- The extracted evidence was noisy — full pages including navigation and
+  related-story sidebars — which both bloated context and gave the judge
+  unsupported material to flag.
+- I'd introduced a real bug: I set `max_results` on the search call, which this
+  tool only accepts at instantiation. The search call failed, the failure wasn't
+  surfaced clearly, and the system still produced a confident report from no
+  evidence at all.
+- The search query was just the raw user sentence, with no route, carrier, or
+  date terms. Even once the bug was fixed, that meant the deep tier retrieved
+  generic travel-trend articles rather than anything specific to this trip.
 
-- **Classifier boundary cases** — the classifier achieves 84% routing agreement against benchmark labels; the remaining misroutes are boundary cases where the distinction between tiers is genuinely ambiguous. A production system would address this through few-shot examples or a confidence threshold that escalates uncertain classifications.
-- **Response schema** — the current schema uses prose lists for risks and recommendations. A production enterprise integration layer would enforce structured operational objects with machine-readable severity levels, issue categories, trip status, evidence, source URLs, and action ownership — so downstream systems can consume results without string parsing.
-- **Crawl source selection** — the crawl node currently targets the first search result URL. A production implementation would apply source quality scoring before selecting the crawl target, prioritizing authoritative sources such as government travel advisories, airline official pages, transit agencies, and established travel intelligence providers.
-- **Context window management** — the synthesize node currently passes truncated retrieval content to the LLM. The production solution is dynamic filtering, letting the model write query-specific filter programs at runtime so only relevant content enters context. Tavily reports that its skill-based dynamic filtering approach used roughly 3.5x fewer tokens than Anthropic PTC on a 50-question DeepSearchQA subset. Source: [Dynamic Filtering: Let the Model Program Its Own Search Filters](https://www.tavily.com/blog/dynamic-filtering-let-the-model-program-its-own-search-filters)
-- **Evaluation idempotency** — the evaluation framework lacks run-level locking. A production implementation would add idempotency guarantees before writing results.
-- **LLM as a judge configuration** — the Hallucination and Answer Relevance evaluators are configured directly in LangSmith's evaluator UI, not in code. A production implementation would version-control evaluator configurations alongside the codebase.
+I fixed what was worth fixing: cleaned the evidence down to main content with
+per-source caps, added explicit grounding rules (no prior knowledge, no inferred
+causation, no over-generalization, and say so plainly when a risk domain isn't
+covered), added the `unknown` severity option, added a few disjoint few-shot
+examples to steady the classifier on boundary cases, and moved `max_results` to
+instantiation.
 
-The goal of this submission wasn't to build everything. It was to measure a real problem, implement a focused solution, and demonstrate improvement through evidence. That's how production AI systems get built — not in one pass, but iteratively, with data driving every decision.
+The most useful thing I learned came out of this loop: fixing the hallucination
+exposed a separate problem. Once the model stopped inventing, it produced an
+honest report grounded in the wrong sources — relevant-looking but generic,
+because retrieval was generic. "Grounded" and "relevant" are different axes,
+which is exactly why two evaluators are worth having: one caught the fabrication,
+the other caught the off-target sourcing. The remaining fix is to build the
+search query from the trip, so retrieval targets the actual route and carriers.
+I left that as documented future work rather than adding more retrieval
+complexity to a project whose main point is cost control.
+
+## What I'd do next
+
+- **Trip-aware query construction.** Under-specified readiness queries retrieve
+  generic sources. Rewriting the search query from the trip (destination,
+  carriers, dates, risk domains) is the highest-value retrieval improvement.
+- **The policy layer.** The schema emits grounded facts; a production
+  integration needs the deterministic layer that maps them to owner, priority,
+  SLA, and trip status.
+- **Crawl source selection.** The crawl node currently takes the first search
+  result. It should score source quality first and prefer authoritative pages
+  (government advisories, carrier and airport sites).
+- **Context filtering.** Synthesis currently truncates retrieved content.
+  Dynamic, query-specific filtering would let only relevant content into the
+  prompt — Tavily's own write-up on dynamic filtering is the reference point
+  here ([Dynamic Filtering](https://www.tavily.com/blog/dynamic-filtering-let-the-model-program-its-own-search-filters)).
+- **Evaluators in code.** The two judges live in the LangSmith UI today. Moving
+  them into the repo would make the quality numbers reproducible and
+  version-controlled, and would let me sharpen the hallucination rubric beyond a
+  single pass/flag.
+- **Surfacing tool failures.** The `max_results` incident showed the graph will
+  quietly turn a failed retrieval into a confident answer. A production version
+  should detect a tool error and report "couldn't assess" rather than proceed.
+
+## What this was
+
+The goal wasn't to build the whole platform. It was to find a real problem by
+measuring it, fix that problem, and use the same measurement to catch the next
+one — including the ones I introduced myself. The honest version of this work is
+a loop: instrument, measure, route, evaluate, find a failure, trace it, fix it,
+and know when the remaining gap is better documented than chased.
