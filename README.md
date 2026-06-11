@@ -13,12 +13,6 @@ Final snapshot: 96% routing agreement, latency 32.4s -> 20.1s on the matched
 sample, and hallucination flag rate 0.75 -> 0.574, where lower is better.
 Details and reproduction in [TECHNICAL_STATEMENT.md](./TECHNICAL_STATEMENT.md).
 
-## Technical Statement
-
-See [TECHNICAL_STATEMENT.md](./TECHNICAL_STATEMENT.md) for the full writeup:
-what changed, why the routing design was chosen, benchmark results, and what
-would still need work before production.
-
 ## Files
 
 ```text
