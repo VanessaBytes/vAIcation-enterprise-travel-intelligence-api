@@ -21,6 +21,7 @@ import os
 # are made by constructing the tools/LLM — these dummy values are never used.
 os.environ.setdefault("TAVILY_API_KEY", "test-key")
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 import pytest
 

@@ -1,0 +1,496 @@
+{
+  "run_id": "quality-check-v4",
+  "project": "vAIcation-enterprise-travel-intelligence-api",
+  "root_runs": 25,
+  "feedback_items": 50,
+  "summary_by_key": {
+    "answer_relevance": {
+      "count": 25,
+      "avg_score": 0.72,
+      "values": {}
+    },
+    "hallucination": {
+      "count": 25,
+      "avg_score": 0.574,
+      "values": {}
+    }
+  },
+  "missing_feedback": [],
+  "per_case": [
+    {
+      "case_id": 1,
+      "expected_route": "simple",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The original input asks a simple factual question: what currency is used in Japan. The output clearly identifies the official currency as the Japanese yen (JPY), symbolized by \u00a5/\u5186, which directly answers the question. It also includes extensive search results, denominations, travel/payment advice, recommendations, and sources, much of which is unnecessary for a brief workflow and goes beyond what was requested. However, these additions are still generally related to Japan's currency and do not change the fact that the core answer is present and on topic. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output\u2019s substantive claims are supported by the provided context: Japan uses the Japanese yen (JPY), symbols \u00a5/\u5186, the listed banknote and coin denominations, and travel guidance about Japan being cash-oriented, carrying cash/coins, ATM charges, and possible card/ATM limitations. The statement about sources dated up to April 28, 2026 is supported by the included JapanTravel result date. No clear unsupported or contradictory factual claims are present."
+        }
+      ]
+    },
+    {
+      "case_id": 2,
+      "expected_route": "simple",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output directly addresses the input question by stating that the typical nonstop flight time from New York to London is about 7 to 8 hours, with specific estimates from multiple sources such as 7 hours 5 minutes, 7 hours 40 minutes, and around 7 hours. It also includes recommendations about using a 7\u20138 hour planning window, which is relevant to the user's request. Although the output is much more detailed than necessary for a 'brief' workflow and includes extensive raw search-result content, the core answer remains focused on the requested flight duration. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "Mostly supported: the sources consistently indicate a typical New York-to-London nonstop/direct flight time of about 7\u20138 hours, with cited figures such as 7h05, 7h08, 7h26, and 7h40. However, one claim says Skyscanner reports an average JFK\u2192LHR time of 7h05; the provided Skyscanner snippet is for New York area (NYCA) to London Heathrow and does not specifically say JFK\u2192LHR. Also, characterizing Travelmath as reporting a 'typical nonstop' duration is slightly imprecise because it provides a calculated flight duration rather than an airline nonstop schedule. These are minor unsupported/over-specific details, not major factual errors."
+        }
+      ]
+    },
+    {
+      "case_id": 3,
+      "expected_route": "simple",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output directly addresses the user's question by stating that U.S. citizens do not need a visa for short business travel to Portugal for stays up to 90 days in any 180-day period. It also provides relevant supporting details such as passport validity requirements and official/relevant sources. Although it includes a large amount of extra search-result content and some additional information about EES/ETIAS that goes beyond a brief answer, these additions are still related to entry requirements and do not change the fact that the main request is answered clearly. Thus, the score should be: True"
+        },
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The response\u2019s substantive claims are supported by the provided context: U.S. citizens do not need a visa for short business travel to Portugal up to 90 days in any 180-day period; passport validity of at least three months beyond return/stay is supported; EES and ETIAS timing are supported by the retrieved Pacific Prime source, with EES biometric collection supported elsewhere in the context. There is a minor imprecision in attributing ETIAS/EES timing partly to U.S. embassy/consular guidance, since the provided U.S. embassy snippet supports EES/biometrics but not ETIAS timing, but the factual claim itself is supported by other context."
+        }
+      ]
+    },
+    {
+      "case_id": 4,
+      "expected_route": "simple",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output directly addresses the input question by stating that Singapore uses Type G power plugs, with supporting details such as 230 V / 50 Hz and notes about occasional Type C or Type M sockets. However, it is much more verbose than the requested brief workflow and includes extensive raw search results, source excerpts, risks, recommendations, and tangential adapter/voltage information. These additions are unnecessary, but they do not prevent the output from answering the question. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output\u2019s factual claims are supported by the provided context: Singapore primarily/standardly uses Type G plugs/outlets, with 230 V and 50 Hz, and some sources mention Type C and/or Type M in certain situations. The recommendation to bring a Type G adapter is broadly consistent with the sources, though actual need depends on the traveler\u2019s existing plug type. No clear unsupported or contradictory factual claims are present."
+        }
+      ]
+    },
+    {
+      "case_id": 5,
+      "expected_route": "simple",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output is largely relevant to the input because it explicitly addresses the user\u2019s question about current weather alerts for Paris by stating that the retrieved evidence does not mention Paris or France and that no retrieved source addresses current weather alerts for Paris today. However, much of the included raw search-result content is about U.S. weather locations such as Michigan, Minnesota, Dallas, and Chicago, which is irrelevant to the Paris-specific query. Still, the report uses that evidence to explain why it cannot confirm Paris alerts from the retrieved sources, so it meaningfully addresses the request. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output accurately states that the retrieved evidence concerns U.S. locations such as Michigan/Detroit, Minnesota/Twin Cities, Dallas/North Texas, and Chicago, and that none of the provided sources mention Paris or France. It appropriately concludes only that the retrieved sources do not address current Paris weather alerts, without making an unsupported claim about the actual alert status in Paris."
+        }
+      ]
+    },
+    {
+      "case_id": 6,
+      "expected_route": "simple",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output directly addresses the input question by concluding that no retrieved source establishes a UK rail strike occurring this week and that none of the provided sources report one. Although the output includes a large amount of raw search-result material, much of which is tangential or irrelevant to UK rail strikes specifically, the final report is on topic and meaningfully attempts to answer the user\u2019s question. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output accurately states that the retrieved sources do not establish a UK rail strike occurring this week. The provided context includes UK construction/maintenance strikes, a US rail strike opinion piece, UK rail-related non-strike items, and other unrelated rail incidents, but no source reporting a UK rail strike this week. No unsupported factual claims are added beyond the retrieval contents."
+        }
+      ]
+    },
+    {
+      "case_id": 7,
+      "expected_route": "simple",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output directly addresses the input question by stating that there is an active U.S. State Department travel advisory for Mexico, identifying it as Level 2: Exercise Increased Caution, and noting state-level variations and higher-risk regions. It also provides sources, key findings, risks, and recommendations that are useful for travel-readiness context. However, the output includes some unnecessary raw search results and a few tangential items, such as earthquake reports, Bank of Mexico financial news, AI travel company articles, and Middle East advisories, which are not directly needed to answer whether Mexico currently has active travel advisories. Despite these extraneous inclusions, the core report clearly answers the question and remains mostly on topic. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The substantive answer is largely supported: the context confirms an active U.S. State Department Level 2 advisory for Mexico, state-level variation, Level 3/4 areas, World Cup-related guidance, protests/roadblocks in Mexico City, and the June 8 earthquake felt in Canc\u00fan/Playa del Carmen/Tulum with emergency protocols and no tsunami warning. However, the report cites the wrong Ynet URL for the Mexico City protest risk and sources list: it uses the Middle East/Iran ceasefire article URL instead of the Mexico City protests article URL. Also, categorizing an earthquake as 'weather' is imprecise, though the factual earthquake details are supported. Because of the incorrect evidence URL/source attribution, the output contains a minor hallucination/inaccuracy."
+        }
+      ]
+    },
+    {
+      "case_id": 8,
+      "expected_route": "simple",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output directly recognizes the user's request for the current TSA wait time at Austin-Bergstrom airport and states that no retrieved source provides that information. While it includes many irrelevant search-result snippets about unrelated airports, news, and wait times in other contexts, the core response remains on topic by explaining that the requested current TSA wait time could not be found. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output correctly states that the retrieved sources do not mention Austin\u2013Bergstrom Airport or provide current TSA checkpoint wait times for AUS. The listed search results align with the provided context and are unrelated to the requested airport wait time. No unsupported substantive answer or fabricated wait time is given."
+        }
+      ]
+    },
+    {
+      "case_id": 9,
+      "expected_route": "research",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output is only partially relevant. It does relate to Lisbon vs. Barcelona and includes some logistics-related points such as September comfort, direct flights between the two cities, and Lisbon\u2019s hilly terrain. However, the original request was for a brief comparison for a 3-day sales offsite focused specifically on flight access, hotel availability, and business traveler logistics. The output provides a large dump of search results and raw extracted travel content, much of which is leisure/tourism-oriented and not useful for a corporate offsite decision. It largely fails to address hotel availability, does not meaningfully compare broader flight access for business travelers, and offers only limited business logistics analysis. The final report contains some relevant elements, but it does not directly or effectively fulfill the requested brief. Thus, the score should be: FALSE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output contains several unsupported or overextended claims. The provided context supports that both cities are good in mid-September to October, Lisbon is hillier/cobbled, and Lisbon\u2013Barcelona direct flights of about two hours can be cheap if booked early. However, the report frames these as operational decision drivers for a business offsite without evidence on hotel availability, business-traveler logistics, or work effectiveness. It also recommends selecting Lisbon for late-September attendee comfort based on evidence that mainly discusses July/August summer conditions, not specifically late September. The claim that shorter than three full days reduces the ability to \u201cwork effectively\u201d is not supported by the sources, which discuss tourism/travel pacing rather than business productivity. Overall, there are unsupported inferences and claims beyond the context."
+        }
+      ]
+    },
+    {
+      "case_id": 10,
+      "expected_route": "research",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output is heavily cluttered with raw search results, extracted article text, and many unnecessary tangents, including material about other London airports, unrelated article sections, and web-page boilerplate. However, its final report does directly address the user\u2019s question by comparing London City, Heathrow, and Gatwick for an executive arrival, identifying London City as best for City/Canary Wharf business convenience, Heathrow as best for long-haul/premium connectivity and backup options, and Gatwick as mainly a lower-cost but less convenient option. Despite being far too verbose for a 'brief' workflow, it meaningfully helps answer the specific airport-choice question. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The report\u2019s main recommendation is broadly supported by the provided context: London City is supported as convenient for business/City/Canary Wharf, Heathrow as the largest long-haul/premium hub with broad connectivity, and Gatwick as often cheaper but with longer/more costly transfers. However, the output also includes many additional extracted raw-content claims that are not present in the supplied context, and a few report details go beyond direct support, such as Heathrow having \u201cmore terminals,\u201d \u201cbackup options next week,\u201d and some source attributions that are only partially supported. Because the output contains unsupported factual details beyond the given context, it should be marked as hallucinated under the strict rubric."
+        }
+      ]
+    },
+    {
+      "case_id": 11,
+      "expected_route": "research",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output does directly address the user\u2019s question by identifying major October Austin events likely to affect hotel availability, especially Austin City Limits, Formula 1 United States Grand Prix, and University of Texas football games. The report section also provides dates, risk assessment, recommendations, and sources, which meaningfully helps fulfill the request. However, the output is far from the requested \u201cbrief\u201d workflow and includes a very large amount of unnecessary raw search-result and extracted-page content, much of which is tangential or irrelevant, such as generic hotel supply discussion, conference venue listings, tech conferences outside October, promotional website content, and long copied webpages. Despite the excessive noise, the core answer is present and relevant. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 0.35,
+          "value": null,
+          "comment": "The core answer is mostly supported: ACL dates, F1 dates, UT football\u2019s potential hotel-price impact, and Austin hotel-supply figures are all grounded in the provided context. However, the output adds some unsupported or inaccurate details, especially claiming ACL attracts attendees from across the U.S. and internationally and that the source reports this scale; the provided context says this about LEVITATION, not ACL. It also refers to ACL/F1 as \u201cdowntown-heavy event periods,\u201d while the context says crowds are mainly at Zilker Park, the university area, or the F1 track, not downtown. These are limited hallucinations within an otherwise well-supported response."
+        }
+      ]
+    },
+    {
+      "case_id": 12,
+      "expected_route": "research",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output is broadly related to the input: it focuses on New York\u2013Tokyo business-class options, mentions relevant carriers such as JAL, ANA, and American, includes September fare information, discusses alliance/award coverage through Oneworld and Star Alliance, and explicitly notes that schedule-reliability data was not found. However, it is not a clean brief comparison as requested; much of the output is raw search/extraction data, duplicated scraped content, promotional material, and unrelated or low-quality source text. It also does not actually compare schedule reliability across airlines, beyond stating that no explicit reliability metrics were retrieved. Still, the final report section meaningfully addresses the main intent and stays mostly within the travel/business-class/alliance topic. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output contains hallucinations/unsupported claims. Although many copied search-result snippets and several report findings are supported (e.g., JAL September fares around USD 6,410, AA JFK-HND review details, ANA/JAL/AA as route options, and no explicit on-time/cancellation metrics in the provided snippets), the output adds extensive `extract_results.raw_content` that is not present in the input context and includes many unverifiable details such as JFK spa treatments, thirteen time zones, specific luxury amenities, exact baggage/change policies, aircraft-product guarantees, and other page text. The recommendations also add unsupported advice such as setting automated alerts. There is also a minor source-attribution issue where TravelingFoody is cited for JAL/ANA product highlights though it is an American Airlines review. Therefore the response is not fully grounded in the provided context."
+        }
+      ]
+    },
+    {
+      "case_id": 13,
+      "expected_route": "research",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output contains a large amount of off-topic material, including search results about a Lufthansa incident at Frankfurt, Israel airline suspensions, American Airlines route changes, Chicago weather, and CTA delays, none of which directly answer what disruptions are affecting Heathrow this week. However, the final report does directly address the user\u2019s question by stating that no retrieved source establishes any current Heathrow disruption this week, distinguishing the irrelevant Frankfurt and historical Heathrow references from active Heathrow issues, and recommending live checks. Despite the excessive irrelevant content, the substantive conclusion is aimed at the requested Heathrow-disruption query. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The report is cautious and grounded in the retrieved material: it states that the sources describe a Lufthansa Boeing 787 nose-gear collapse at Frankfurt and only a historical 2021 Heathrow incident, while noting that no retrieved source establishes any current Heathrow disruption this week. It avoids asserting active Heathrow delays, strikes, cancellations, or safety issues and appropriately recommends checking live airport/airline notices."
+        }
+      ]
+    },
+    {
+      "case_id": 14,
+      "expected_route": "research",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output only partially addresses the request. The input asks for a concise summary of current safety conditions in Nairobi for business travelers. Instead, the output is largely a raw research/search-results dump, with many irrelevant or only loosely related sources. Its final report focuses mainly on protests in Nanyuki/Laikipia over an Ebola quarantine facility, not Nairobi itself, and does not provide a well-rounded Nairobi-specific business travel safety summary covering issues like crime, demonstrations, transport, business districts, official advisories, or practical traveler precautions. It does include one relevant point\u2014that retrieved sources do not establish violent incidents inside Nairobi\u2014and gives some practical recommendations, but the overall answer is not directly or effectively tailored to the requested Nairobi business-traveler safety summary. Thus, the score should be: False"
+        },
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The generated report\u2019s substantive safety claims are supported by the provided sources: protests and police tear gas/shootings are reported in Nanyuki/Laikipia, about 120 miles from Nairobi; Kenyatta National Hospital in Nairobi is mentioned only in quarantine-planning discussion; and the report appropriately notes that the retrieved sources do not establish protests or violence inside Nairobi itself. Recommendations are mostly framed from those facts rather than adding concrete unsupported conditions in Nairobi. No clear factual contradiction or invented detail is present in the report."
+        }
+      ]
+    },
+    {
+      "case_id": 15,
+      "expected_route": "research",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The generated report is well supported by the retrieved context: the sources shown do not establish any planned protests or demonstrations in Paris next week, and the only Paris-specific source discusses retail pop-ups and Paris men's Fashion Week dates, not protests. The report avoids asserting that no protests exist at all and frames the finding as limited to the retrieved sources. Although the output includes extensive extracted article text about Mexico City protests, those are presented as source/extraction content rather than the final answer and do not create an unsupported Paris-related claim."
+        },
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output ultimately addresses the user's question by stating that no retrieved source establishes major protests or demonstrations planned in Paris next week, and it notes that the only Paris-specific evidence found concerns retail pop-ups/Fashion Week rather than protests. However, much of the output consists of irrelevant raw search and extraction results about protests in Mexico City, South Korea, travel bookings, border delays, and other unrelated topics, which do not help answer the Paris-specific business travel readiness question. Despite these tangents, the final report is on-topic and meaningfully answers the request. Thus, the score should be: 1"
+        }
+      ]
+    },
+    {
+      "case_id": 16,
+      "expected_route": "research",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output is mostly grounded in the provided context: it correctly identifies the Air Canada temporary cuts on JFK\u2013Toronto and JFK\u2013Montreal with an October 25, 2026 planned resumption, and correctly notes that the evidence does not establish airport-wide JFK delays or cancellations. However, it contains a minor unsupported/misleading claim that a Travel Weekly source \u201clists carriers/airlines operating flights to JFK\u201d; the source only says Qatar Airways will operate to several North American destinations including New York JFK, not that it lists multiple carriers. The recommendation about refund/rebooking options for Air Canada is also not directly supported by the Air Canada portion of the context, though contacting the airline is reasonable advice."
+        },
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output is largely a search/workflow dump with many irrelevant items, including Chicago traffic incidents, Chicago weather/storm stories, a San Francisco airport ground stop, and general Qatar Airways route news that do not address JFK cancellation or delay issues. However, the final report section directly responds to the input by summarizing whether retrieved evidence indicates JFK-related cancellations or delays, identifying specific Air Canada JFK route suspensions, noting that no broader JFK-wide delays/cancellations were found, and giving travel recommendations. Despite substantial irrelevant search-result noise, the core answer meaningfully addresses the asked question. Thus, the score should be: TRUE"
+        }
+      ]
+    },
+    {
+      "case_id": 17,
+      "expected_route": "research",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "hallucination",
+          "score": 0.0,
+          "value": null,
+          "comment": "The final report\u2019s substantive conclusion is well supported: the provided sources show Austin accommodation-search growth for summer 2026, SiteMinder demand data only through September, and Austin summer events, while no source establishes October hotel-demand spikes. The response appropriately states that October-specific spikes are not supported. Minor phrasing such as \u201cstrong hotel demand\u201d extrapolates from search demand, but it remains consistent with the cited source and is not a clear hallucination."
+        },
+        {
+          "key": "answer_relevance",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output is only partially related to the topic of hotel demand in Austin, but it does not directly answer the specific question about expected October demand spikes caused by conferences, festivals, or major events. Instead, it returns mostly raw search results and extracted articles about summer 2026 travel demand, September/global trends, Chicago hotels, Austin summer events, and unrelated local items. The final report notes that no retrieved sources specifically establish October demand spikes in Austin, which is somewhat relevant as a limitation, but it fails to identify the obvious type of information requested: October Austin events likely to drive hotel demand. The extensive off-topic search material and absence of October-specific conference/festival/event analysis make the output ineffective for the user\u2019s request. Thus, the score should be: FALSE"
+        }
+      ]
+    },
+    {
+      "case_id": 18,
+      "expected_route": "deep",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output is only partially related to the request. It contains some relevant material about investor roadshow logistics, managed ground transport, general safety precautions, UK tax/compliance risk, and broad travel-friction considerations. However, it does not actually build a usable 5-day business travel brief across London, Paris, and Frankfurt. It lacks a clear day-by-day itinerary, city-by-city logistics, major events for the relevant travel window, specific safety considerations by destination, and concrete travel-friction details such as airport/rail transfers, border/Schengen considerations, strike risks, or local disruption risks. Much of the output is raw search/extraction/crawl metadata and long source dumps, which are not responsive to the user\u2019s request and create substantial irrelevant clutter. The final report section is closer to the requested brief but remains generic and incomplete. Thus, the score should be: FALSE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output contains unsupported claims beyond the provided context. Most notably, it includes extensive `extract_results`/`crawl_results` raw content with many details not present in the context, such as Driven Worldwide London team details, 1,500 locations, specific contacts, event case studies, PalmTree integrations, and other company claims. In the generated report, several claims are also overextended: Paris is described as \u201ccommonly included\u201d in European roadshows based only on limited event listings/snippets, and general safety guidance is applied specifically to London, Paris, and Frankfurt without city-specific support. Because the response includes factual details not directly verifiable from the supplied context, it contains hallucinations."
+        }
+      ]
+    },
+    {
+      "case_id": 19,
+      "expected_route": "deep",
+      "workflow": "brief",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output is only partially related to the request. It repeats the query and includes a large amount of raw search/extraction/crawl data, much of which is irrelevant or off-topic, such as USA World Cup travel advice, France travel advice, generic retreat-planning content, and Instagram snippets. The final report does touch on some requested dimensions\u2014hotel/MICE demand, general airport-proximity considerations, and a Dubai-related Middle East safety/transit risk\u2014but it does not meaningfully compare Singapore, Dubai, and London city-by-city. It also fails to provide concrete flight access, visa friction, safety ratings for all three, or local event conflicts, and explicitly states that several requested items are not addressed by the sources. Because the user asked for a concise comparative brief and the output mostly provides noisy retrieval artifacts plus an incomplete summary, it does not directly or effectively fulfill the request. Thus, the score should be: False"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The final report is mostly careful and often notes missing evidence, but it still makes some unsupported/inferred claims. In particular, it elevates Middle East regional disruption guidance into a high safety risk relevant to Dubai / \u201cMiddle East regional volatility affecting Dubai,\u201d while the provided context only says disruptions may affect transit or layovers in affected Middle East locations and does not identify Dubai/UAE as affected. Some recommendations also infer hotel/meeting-space price and availability pressure from general MICE rebound evidence rather than direct city-specific hotel-demand data. Overall, there are hallucinations/unsupported extrapolations, though many core claims are grounded in the supplied snippets."
+        }
+      ]
+    },
+    {
+      "case_id": 20,
+      "expected_route": "deep",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output contains hallucinations. The main factual error is applying the EU/Schengen Entry/Exit System (EES) delay risk to arrivals into the UK/London; the cited WTTC sources specifically discuss entering the Schengen Area, and the UK is referenced as a source market of travelers, not as a destination subject to EES processing. Recommendations to allow extra time at the UK border due to EES delays are therefore unsupported. The output also misattributes the \u201cpay for flexibility and protection\u201d guidance to Travel + Leisure in one key finding, while the cited context shows that guidance comes from the BBC article. Other negative findings about no route/date-specific weather, health, or carrier disruptions are broadly supported by the absence of such evidence in the retrieved sources."
+        },
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output partially addresses the input by retaining the trip context and producing a final readiness-style report with a summary, key findings, identified risk, recommendations, and sources. However, much of the output is a raw tool/search dump containing numerous unrelated or weakly related articles and crawled pages, including Mexico travel guidance, Madison storms, hospitality industry pages, food and beverage content, and unrelated airline/Israel route news. These tangents do not help monitor disruption risks for a New York to London business trip on June 15\u201320. The final report is somewhat on-topic, but it only identifies a broad Europe/entry-delay risk and does not provide a focused, comprehensive disruption-risk monitoring answer for the specific route and dates. Overall, the answer is relevant in intent but heavily diluted by irrelevant content and only partially fulfills the request. Thus, the score should be: TRUE"
+        }
+      ]
+    },
+    {
+      "case_id": 21,
+      "expected_route": "deep",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output is only partially on topic. It includes a final report with some Brazil travel-logistics findings, especially LATAM Brasil capacity reductions and aviation fuel-cost uncertainty, which are relevant to a consulting team traveling to Brazil. However, the response is dominated by raw search/extract/crawl payloads and many irrelevant or weakly related items, such as mining fraud in Africa, pesticide registration lawsuits, an August agrochemical event, generic website navigation text, AI in travel companies, and U.S. World Cup disease concerns. More importantly, it does not actually analyze \u201call travel risks and logistics changes\u201d affecting travel to Brazil this month; it focuses narrowly on a few aviation/event items and even includes future August logistics that do not affect this month. Because it fails to directly and effectively fulfill the requested comprehensive travel-risk readiness analysis, it should be judged not relevant overall. Thus, the score should be: FALSE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The final report is mostly grounded in the provided sources, but it inaccurately says Reuters does not specify June impacts from LATAM Brasil capacity cuts. The Reuters context states the July reduction would repeat a reduction already seen in June, so the output downplays/contradicts a supported June logistics change. The output also includes extensive extracted/crawled details not present in the supplied context, but the clearest factual issue is the June-impact claim."
+        }
+      ]
+    },
+    {
+      "case_id": 22,
+      "expected_route": "deep",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output largely addresses the input question by identifying recent changes affecting corporate travel to the Middle East, including a regional security alert, elevated travel advisories, UAE visa restrictions linked to Ebola, airline/rerouting impacts, and demand softness tied to regional conflict. These are directly relevant to a corporate travel readiness workflow. However, the output includes substantial raw search-result dumps and some less directly relevant items, such as Schengen visa delays for UAE residents traveling to Europe, French summer booking trends, and broad tourism/hotel-demand commentary. These tangents add noise but do not overwhelm the fact that the final report meaningfully answers the question. Thus, the score should be: True"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output is mostly grounded in the retrieved context, especially the U.S. Embassy alert, UAE visa restrictions for DRC/Uganda/South Sudan nationals, and Schengen appointment bottlenecks. However, it contains at least one clear factual distortion: it recommends allowing \u201ctwo to three months for processing\u201d Schengen visas, while the context says the two-to-three-month figure is for appointment waits and processing adds another 10\u201315 working days. The output also includes some extracted/raw-content claims and retitled items not directly supported by the provided context. Therefore it is not hallucination-free."
+        }
+      ]
+    },
+    {
+      "case_id": 23,
+      "expected_route": "deep",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output is largely on-topic: it attempts to assess travel readiness for a Tokyo trip and includes a report with summary, key findings, weather-related risks, transport disruption concerns, and recommendations to monitor official alerts, confirm airport/carrier operations, and check travel.state.gov for entry/safety guidance. However, it is incomplete relative to the input because it does not actually provide current airport operations, detailed Tokyo transit reliability, a clear safety assessment, or concrete entry requirements; it also includes many raw search results that are tangential or irrelevant, such as Japan travel-package articles, general travel-confidence articles, transit AI workforce content, and travel AI industry news. Still, the core report meaningfully addresses the requested readiness workflow and stays substantially aligned with the trip-readiness intent. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output is partly supported by the provided sources on Typhoon Jangmi, heavy rainfall, evacuation advisories, and general transport/infrastructure disruption. However, it adds or overstates several points: it calls Jangmi an \u201cactive typhoon\u201d and frames impacts as affecting the trip \u201cnext week\u201d/\u201cweek of travel\u201d even the evidence only describes events from the current week and does not establish next-week conditions; it implies Tokyo-specific transport disruption and local service/lodging impacts beyond what the cited context directly supports; and it presents airport/transit readiness risk conclusions without airport-specific or current operational evidence. These unsupported/speculative claims constitute hallucinations."
+        }
+      ]
+    },
+    {
+      "case_id": 24,
+      "expected_route": "deep",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 0.0,
+          "value": null,
+          "comment": "The output partially addresses the request by identifying a recent Johannesburg safety incident and providing safety-related recommendations. However, it does not directly evaluate whether the legal team should proceed with travel, and it largely fails to analyze the requested transportation, health, and business continuity risks. Much of the output consists of raw search results, extracted webpages, and irrelevant material about mining, Ebola at the World Cup, legal AI tools, and other unrelated topics. The final report is narrow and incomplete rather than a clear readiness assessment. Thus, the score should be: FALSE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output reproduces the provided search-result snippets accurately in places and the final report's core Reuters-based facts (12 killed, 9 injured; recent Johannesburg shooting; South Africa averaging about 60 murders a day) are supported. However, the output also includes extensive extracted/crawled raw_content with many detailed claims not present in the input context, such as Jinchuan's alleged $144.5 million misappropriation scheme, Ruashi Mine investigation dates and findings, Mozambique's 15% state ownership mining law details, and expanded Politico reporting details. These may be true externally, but they are not directly verifiable from the supplied context. Some recommendations also extend beyond the evidence, though framed as advice. Therefore the output contains unsupported claims relative to the provided context."
+        }
+      ]
+    },
+    {
+      "case_id": 25,
+      "expected_route": "deep",
+      "workflow": "readiness",
+      "feedback": [
+        {
+          "key": "answer_relevance",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output ultimately addresses the input by identifying operational travel risks for the Austin-to-London executive trip, including potential border/entry delays and London heat conditions, and it provides recommendations and evidence links. However, it includes a very large amount of raw search, extract, and crawl data that is not directly useful to the user, including unrelated content about hospitality suppliers, food and beverage, World Cup cyber risks, and general travel sentiment. These tangents reduce focus, but the final report section is on-topic and meaningfully attempts to answer the requested readiness/risk question. Thus, the score should be: TRUE"
+        },
+        {
+          "key": "hallucination",
+          "score": 1.0,
+          "value": null,
+          "comment": "The output contains hallucinations/unsupported claims. The major issue is that it applies Europe\u2019s Entry/Exit System (EES) risk to an Austin\u2013London arrival and recommends EES pre-registration/fast-track options for London entry, while the provided context says the EES delays concern entry into the Schengen Area; the UK/London is not established as affected. The Reuters item only lists a caption, \u201cRecord temperatures loom as heat dome grips London,\u201d but the output upgrades this to high temperatures \u201caffecting\u201d London during the June 15\u201320 trip without date-specific support. Some recommendations also go beyond the cited evidence."
+        }
+      ]
+    }
+  ]
+}

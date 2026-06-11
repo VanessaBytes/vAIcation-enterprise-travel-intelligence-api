@@ -29,6 +29,7 @@ benchmark.py            # Runs the routed graph against the 25-case eval set
 compare.py              # Pulls baseline/routed trace metrics from LangSmith
 eval_results.py         # Pulls LangSmith evaluator scores for a benchmark run
 docs/architecture.svg   # High-level architecture diagram
+docs/results/           # Snapshot JSON outputs for reported LangSmith metrics
 .env.example            # Environment variable template
 TECHNICAL_STATEMENT.md  # Main writeup
 test_routing.py         # Unit tests for routing, scoping, ranking, and output contract
@@ -175,6 +176,29 @@ The project also uses LangSmith-hosted LLM-as-judge evaluators for hallucination
 and answer relevance. Those evaluators are configured in the LangSmith UI, not
 version-controlled in this repo. `eval_results.py` pulls those evaluator scores
 back down for a tagged benchmark run.
+
+For reviewability, the headline metric outputs are also checked in under
+[`docs/results`](docs/results/):
+
+The files are related like this:
+
+- `baseline-sample.json` is the original ReAct agent on a 9-case sample. This is
+  the "before" run.
+- `matched-comparison.json` compares that same 9-case sample against the routed
+  graph. This is where the latency, LLM-call, and tool-call deltas come from.
+- `full-benchmark.json` is the routed graph on the full 25-case benchmark. This
+  is where the 96% routing-agreement figure comes from.
+- `evaluator-results.json` is the LangSmith evaluator output for that final
+  25-case routed benchmark. This is where answer relevance and hallucination
+  flag-rate figures come from.
+- `iteration-summary.md` is the human-readable bridge across those artifacts:
+  it summarizes the early routing runs, the matched before/after comparison,
+  and the final quality run.
+
+Those files are snapshots. To regenerate them from LangSmith, create/configure a
+LangSmith project, set the environment variables shown below, run `baseline.py`
+and `benchmark.py` with a shared run ID if you want fresh traces, then run
+`compare.py` and `eval_results.py`.
 
 ## API
 

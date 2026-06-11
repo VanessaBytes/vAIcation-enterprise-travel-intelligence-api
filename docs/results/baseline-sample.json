@@ -1,0 +1,135 @@
+{
+  "run_id": "june-10-latency-v1",
+  "description": "Baseline ReAct agent results for the 9-case matched sample used in the before/after comparison.",
+  "matched_cases": 9,
+  "baseline_avg": {
+    "llm_calls": 3.22,
+    "tool_calls": 2.67,
+    "latency_ms": 32432.33
+  },
+  "stats_by_expected_complexity": {
+    "simple": {
+      "matched_cases": 3,
+      "llm_calls": 3.67,
+      "tool_calls": 2.67,
+      "latency_ms": 21635.67
+    },
+    "research": {
+      "matched_cases": 3,
+      "llm_calls": 4.33,
+      "tool_calls": 3.33,
+      "latency_ms": 38757.33
+    },
+    "deep": {
+      "matched_cases": 3,
+      "llm_calls": 1.67,
+      "tool_calls": 2.0,
+      "latency_ms": 36904.0
+    }
+  },
+  "cases": [
+    {
+      "case_id": 1,
+      "expected_route": "simple",
+      "workflow": "brief",
+      "evaluation_focus": "static factual lookup",
+      "llm_calls": 1,
+      "tool_calls": {},
+      "total_tool_calls": 0,
+      "latency_ms": 3183
+    },
+    {
+      "case_id": 3,
+      "expected_route": "simple",
+      "workflow": "brief",
+      "evaluation_focus": "entry requirement lookup",
+      "llm_calls": 2,
+      "tool_calls": {
+        "tavily_search": 1
+      },
+      "total_tool_calls": 1,
+      "latency_ms": 16480
+    },
+    {
+      "case_id": 5,
+      "expected_route": "simple",
+      "workflow": "readiness",
+      "evaluation_focus": "current condition lookup",
+      "llm_calls": 8,
+      "tool_calls": {
+        "tavily_extract": 1,
+        "tavily_search": 6
+      },
+      "total_tool_calls": 7,
+      "latency_ms": 45244
+    },
+    {
+      "case_id": 9,
+      "expected_route": "research",
+      "workflow": "brief",
+      "evaluation_focus": "destination comparison",
+      "llm_calls": 2,
+      "tool_calls": {
+        "tavily_search": 1
+      },
+      "total_tool_calls": 1,
+      "latency_ms": 42655
+    },
+    {
+      "case_id": 13,
+      "expected_route": "research",
+      "workflow": "readiness",
+      "evaluation_focus": "airport disruption synthesis",
+      "llm_calls": 10,
+      "tool_calls": {
+        "tavily_search": 9
+      },
+      "total_tool_calls": 9,
+      "latency_ms": 63475
+    },
+    {
+      "case_id": 17,
+      "expected_route": "research",
+      "workflow": "readiness",
+      "evaluation_focus": "hotel demand intelligence",
+      "llm_calls": 1,
+      "tool_calls": {},
+      "total_tool_calls": 0,
+      "latency_ms": 10142
+    },
+    {
+      "case_id": 18,
+      "expected_route": "deep",
+      "workflow": "brief",
+      "evaluation_focus": "multi-city business travel planning",
+      "llm_calls": 1,
+      "tool_calls": {},
+      "total_tool_calls": 0,
+      "latency_ms": 36862
+    },
+    {
+      "case_id": 20,
+      "expected_route": "deep",
+      "workflow": "readiness",
+      "evaluation_focus": "comprehensive trip readiness",
+      "llm_calls": 2,
+      "tool_calls": {
+        "tavily_search": 1
+      },
+      "total_tool_calls": 1,
+      "latency_ms": 38738
+    },
+    {
+      "case_id": 23,
+      "expected_route": "deep",
+      "workflow": "readiness",
+      "evaluation_focus": "multi-domain executive travel readiness",
+      "llm_calls": 2,
+      "tool_calls": {
+        "tavily_search": 5
+      },
+      "total_tool_calls": 5,
+      "latency_ms": 35112
+    }
+  ]
+}

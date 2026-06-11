@@ -9,11 +9,14 @@ would look like, and then measure whether the changes actually helped.
 
 I chose travel readiness because it made the context problem concrete. A model
 can only be as useful as the information and boundaries it is given. Throughout
-the project, the main lesson kept coming back to context engineering: what I
-feed the model, what I let it decide, what I keep deterministic in code, and how
-I evaluate whether the answer met the standard I expected. Tavily's Search,
-Extract, and Crawl tools were useful because they exposed that whole chain: live
-retrieval, source selection, evidence quality, and final synthesis.
+the project, two themes kept recurring. One was context engineering, the
+question of what evidence I feed the model and what boundaries I give it. The
+other was evaluation, meaning how I check whether the answer actually met the
+standard I expected. Those two themes drove the design choices behind the
+system, mainly what the model should decide and what should stay deterministic
+in code. Tavily's Search, Extract, and Crawl tools were useful because they
+exposed that whole chain: live retrieval, source selection, evidence quality,
+and final synthesis.
 
 ## Starting with measurement
 

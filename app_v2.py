@@ -598,7 +598,7 @@ def run_extract(state: TravelState) -> dict:
 def run_crawl(state: TravelState) -> dict:
     """Crawl the most relevant site for comprehensive coverage (deep path only).
 
-    Note: currently targets the first search result URL. A production
+    Note: currently targets the top-ranked search result URL. A production
     implementation would apply source quality scoring before selecting
     the crawl target.
     """
