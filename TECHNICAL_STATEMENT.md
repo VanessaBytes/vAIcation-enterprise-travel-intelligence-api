@@ -246,10 +246,13 @@ filtering before synthesis, rather than a blanket attempt to lower the aggregate
 - **A lighter simple-route contract.** Simple factual/current checks still emit
   the same full report schema as deep readiness assessments. A production API
   should probably return a smaller shape for simple answers.
-- **Context filtering.** The current ranker works at the source/block level.
-  More precise paragraph-level filtering would keep less page boilerplate in
-  the prompt — Tavily's own write-up on dynamic filtering is the reference point
-  here ([Dynamic Filtering](https://www.tavily.com/blog/dynamic-filtering-let-the-model-program-its-own-search-filters)).
+- **Context filtering.** The current ranker chooses which sources look most
+  relevant before extraction, crawl, and synthesis. A production version should
+  go one level deeper and keep only the most relevant paragraphs from those
+  sources. That would reduce page boilerplate, related-story noise, and
+  adjacent-but-irrelevant facts before the model writes the final report.
+  Tavily's write-up on dynamic filtering is the reference point here
+  ([Dynamic Filtering](https://www.tavily.com/blog/dynamic-filtering-let-the-model-program-its-own-search-filters)).
 - **Evaluators in code.** The two judges live in the LangSmith UI today. Moving
   them into the repo would make the quality numbers reproducible and
   version-controlled, and would let me sharpen the hallucination rubric beyond a
