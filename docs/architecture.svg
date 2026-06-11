@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="945" viewBox="0 0 1000 945" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="985" viewBox="0 0 1000 985" role="img" aria-labelledby="title desc">
   <title id="title">vAIcation architecture diagram</title>
   <desc id="desc">Architecture for vAIcation: a FastAPI travel request flows down a central LangGraph pipeline — classifier, Tavily evidence layer (Search every route, Extract on research and deep, Crawl on deep only), deterministic evidence cleanup, OpenAI structured synthesis, and the evidence-linked API response. An optional trip context on the left feeds the classifier, the search step, and synthesis; a LangSmith observability rail on the right traces every step.</desc>
   <defs>
@@ -36,7 +36,7 @@
     </marker>
   </defs>
 
-  <rect class="bg" width="1000" height="945" />
+  <rect class="bg" width="1000" height="985" />
   <text class="title" x="64" y="58">vAIcation Architecture</text>
   <text class="subtitle" x="64" y="90">The classifier decides how much Tavily evidence to gather before grounded synthesis.</text>
 
@@ -120,5 +120,6 @@
   <rect class="box" x="320" y="850" width="380" height="44" rx="14" />
   <text class="label" x="510" y="878" text-anchor="middle">Evidence-linked API response</text>
 
-  <text class="tiny" x="64" y="928">LLM calls happen only at classification and final synthesis. Tavily supplies live web evidence; deterministic code caps and cleans it before grounded synthesis. LangSmith traces every step.</text>
+  <text class="tiny" x="500" y="945" text-anchor="middle">LLM calls happen only at classification and final synthesis. Tavily supplies live web evidence;</text>
+  <text class="tiny" x="500" y="963" text-anchor="middle">deterministic code caps and cleans it before grounded synthesis, and LangSmith traces every step.</text>
 </svg>
