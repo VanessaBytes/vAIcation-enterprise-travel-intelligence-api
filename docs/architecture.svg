@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="945" viewBox="0 0 1000 945" role="img" aria-labelledby="title desc">
+  <title id="title">vAIcation architecture diagram</title>
+  <desc id="desc">Architecture for vAIcation: a FastAPI travel request flows down a central LangGraph pipeline — classifier, Tavily evidence layer (Search every route, Extract on research and deep, Crawl on deep only), deterministic evidence cleanup, OpenAI structured synthesis, and the evidence-linked API response. An optional trip context on the left feeds the classifier, the search step, and synthesis; a LangSmith observability rail on the right traces every step.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f8fb; }
+      .panel { fill: #ffffff; stroke: #d7dce5; stroke-width: 2; }
+      .box { fill: #ffffff; stroke: #253041; stroke-width: 2; }
+      .trip { fill: #fbfcff; stroke: #64748b; stroke-width: 2; }
+      .graph { fill: #eef0ff; stroke: #4f46e5; stroke-width: 2.2; }
+      .tavily-panel { fill: #eafbf6; stroke: #0f8f72; stroke-width: 2.5; }
+      .tavily-box { fill: #ffffff; stroke: #0f8f72; stroke-width: 2; }
+      .openai { fill: #f3f0ff; stroke: #6f58c9; stroke-width: 2.2; }
+      .code { fill: #fff7e8; stroke: #c27a18; stroke-width: 2.2; }
+      .observe { fill: #eef6ff; stroke: #3478b8; stroke-width: 2; }
+      .title { font: 700 34px Arial, sans-serif; fill: #172033; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #4b5870; }
+      .label { font: 700 19px Arial, sans-serif; fill: #1e293b; }
+      .small { font: 400 14px Arial, sans-serif; fill: #4b5870; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #607086; }
+      .badge { font: 700 12px Arial, sans-serif; letter-spacing: 0.4px; fill: #ffffff; }
+      .rail { font: 700 15px Arial, sans-serif; letter-spacing: 0.6px; fill: #2c5f8c; }
+      .arrow { fill: none; stroke: #253041; stroke-width: 2.5; marker-end: url(#arrow); }
+      .arrow-soft { fill: none; stroke: #7b8798; stroke-width: 2; stroke-dasharray: 6 6; marker-end: url(#arrow-soft); }
+      .bus { fill: none; stroke: #64748b; stroke-width: 2; stroke-dasharray: 6 6; }
+      .arrow-trip { fill: none; stroke: #64748b; stroke-width: 2; stroke-dasharray: 6 6; marker-end: url(#arrow-trip-m); }
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#253041" />
+    </marker>
+    <marker id="arrow-soft" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#7b8798" />
+    </marker>
+    <marker id="arrow-trip-m" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1000" height="945" />
+  <text class="title" x="64" y="58">vAIcation Architecture</text>
+  <text class="subtitle" x="64" y="90">The classifier decides how much Tavily evidence to gather before grounded synthesis.</text>
+
+  <rect class="panel" x="40" y="120" width="920" height="785" rx="22" />
+
+  <!-- Trip context (left) — feeds classifier, search, and synthesis via a side bus -->
+  <rect class="trip" x="60" y="285" width="200" height="150" rx="14" />
+  <rect x="82" y="305" width="92" height="22" rx="11" fill="#64748b" />
+  <text class="badge" x="95" y="320">OPTIONAL</text>
+  <text class="label" x="82" y="352">Trip context</text>
+  <text class="small" x="82" y="378">Used for routing, search</text>
+  <text class="small" x="82" y="398">enrichment &amp; scoping,</text>
+  <text class="small" x="82" y="418">and grounded synthesis.</text>
+
+  <path class="bus" d="M260 360 H282" />
+  <path class="bus" d="M282 305 V788" />
+  <path class="arrow-trip" d="M282 305 H320" />
+  <path class="arrow-trip" d="M282 475 H300" />
+  <path class="arrow-trip" d="M282 788 H320" />
+
+  <!-- LangSmith observability rail (right) — traces every step -->
+  <rect class="observe" x="780" y="270" width="150" height="556" rx="16" />
+  <rect x="800" y="288" width="100" height="24" rx="12" fill="#3478b8" />
+  <text class="badge" x="814" y="305">LANGSMITH</text>
+  <text class="rail" x="855" y="548" text-anchor="middle" transform="rotate(-90 855 548)">Traces + evals — latency · relevance · hallucination</text>
+  <path class="arrow-soft" d="M700 308 H780" />
+  <path class="arrow-soft" d="M720 499 H780" />
+  <path class="arrow-soft" d="M700 670 H780" />
+  <path class="arrow-soft" d="M700 788 H780" />
+
+  <!-- Main pipeline -->
+  <rect class="box" x="320" y="160" width="380" height="70" rx="14" />
+  <rect x="342" y="178" width="82" height="22" rx="11" fill="#159947" />
+  <text class="badge" x="356" y="194">FASTAPI</text>
+  <text class="label" x="440" y="196">Travel request</text>
+  <text class="small" x="342" y="221">/travel/brief · /travel/readiness</text>
+
+  <rect class="graph" x="320" y="270" width="380" height="76" rx="14" />
+  <rect x="342" y="289" width="104" height="22" rx="11" fill="#4f46e5" />
+  <text class="badge" x="356" y="305">LANGGRAPH</text>
+  <text class="label" x="460" y="307">Classifier</text>
+  <text class="small" x="342" y="333">1 LLM call · route: simple / research / deep</text>
+
+  <path class="arrow" d="M510 230 V270" />
+
+  <rect class="tavily-panel" x="300" y="390" width="420" height="218" rx="18" />
+  <rect x="322" y="416" width="84" height="24" rx="12" fill="#0f8f72" />
+  <text class="badge" x="337" y="433">TAVILY</text>
+  <text class="label" x="420" y="434">Live web evidence</text>
+
+  <rect class="tavily-box" x="320" y="458" width="380" height="34" rx="9" />
+  <text class="label" x="342" y="481">Search</text>
+  <text class="small" x="470" y="480">every route · URLs + snippets</text>
+
+  <rect class="tavily-box" x="320" y="508" width="380" height="34" rx="9" />
+  <text class="label" x="342" y="531">Extract</text>
+  <text class="small" x="470" y="530">research + deep · fuller page text</text>
+
+  <rect class="tavily-box" x="320" y="558" width="380" height="34" rx="9" />
+  <text class="label" x="342" y="581">Crawl</text>
+  <text class="small" x="470" y="580">deep only · site-level coverage</text>
+
+  <path class="arrow" d="M510 608 V632" />
+
+  <rect class="code" x="320" y="632" width="380" height="76" rx="14" />
+  <rect x="342" y="651" width="64" height="22" rx="11" fill="#c27a18" />
+  <text class="badge" x="356" y="667">CODE</text>
+  <text class="label" x="430" y="669">Rank + clean evidence</text>
+  <text class="small" x="342" y="693">deterministic relevance ranker · no LLM call</text>
+
+  <path class="arrow" d="M510 708 V750" />
+
+  <rect class="openai" x="320" y="750" width="380" height="76" rx="14" />
+  <rect x="342" y="769" width="78" height="22" rx="11" fill="#6f58c9" />
+  <text class="badge" x="356" y="785">OPENAI</text>
+  <text class="label" x="445" y="787">Structured synthesis</text>
+  <text class="small" x="342" y="811">1 LLM call · evidence-linked report</text>
+
+  <path class="arrow" d="M510 826 V850" />
+
+  <rect class="box" x="320" y="850" width="380" height="44" rx="14" />
+  <text class="label" x="510" y="878" text-anchor="middle">Evidence-linked API response</text>
+
+  <text class="tiny" x="64" y="928">LLM calls happen only at classification and final synthesis. Tavily supplies live web evidence; deterministic code caps and cleans it before grounded synthesis. LangSmith traces every step.</text>
+</svg>

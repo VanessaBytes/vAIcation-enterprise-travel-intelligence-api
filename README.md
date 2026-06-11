@@ -9,6 +9,10 @@ Tavily Search, Extract, and Crawl available, but it could call them repeatedly
 with little control over cost or latency. I added tracing first, then replaced
 the open-ended agent loop with a routed graph.
 
+Final snapshot: 96% routing agreement, latency 32.4s -> 20.1s on the matched
+sample, and hallucination flag rate 0.75 -> 0.574, where lower is better.
+Details and reproduction in [TECHNICAL_STATEMENT.md](./TECHNICAL_STATEMENT.md).
+
 ## Technical Statement
 
 See [TECHNICAL_STATEMENT.md](./TECHNICAL_STATEMENT.md) for the full writeup:
@@ -23,9 +27,11 @@ app_v2.py               # Routed LangGraph implementation
 baseline.py             # Runs the original agent against a benchmark sample
 benchmark.py            # Runs the routed graph against the 25-case eval set
 compare.py              # Pulls baseline/routed trace metrics from LangSmith
+eval_results.py         # Pulls LangSmith evaluator scores for a benchmark run
+docs/architecture.svg   # High-level architecture diagram
 .env.example            # Environment variable template
 TECHNICAL_STATEMENT.md  # Main writeup
-test_routing.py         # Unit tests for routing, scoping, and output contract
+test_routing.py         # Unit tests for routing, scoping, ranking, and output contract
 ```
 
 ## What Changed
@@ -52,6 +58,12 @@ The key distinction is scope. A single airport disruption question is usually
 `research`. A full trip readiness question across transport, weather, safety,
 entry rules, and logistics is `deep`.
 
+At a high level, the classifier decides how much Tavily evidence to gather.
+Search runs once for every request; Extract and Crawl are added only when the
+route needs fuller page or site-level evidence.
+
+![vAIcation architecture diagram](docs/architecture.svg)
+
 ## Trip Context
 
 Readiness checks can include a booked trip:
@@ -74,6 +86,18 @@ When trip context is present, readiness search is scoped to what changed since
 `booked_at` and, for narrow routes, biased toward authoritative news sources
 and the booked carriers. In a real deployment, that trip object would come from
 a travel-management or booking system.
+
+The search text is also enriched from the trip when needed. If the user asks a
+vague readiness question like "what changed since booking?", the graph appends
+missing route, date, hotel, and carrier terms before search. On the deep route,
+it also adds broad risk-domain terms because that path is meant to cover several
+domains at once.
+
+After Tavily returns results, the app applies a small deterministic relevance
+ranker before extraction, crawl, and synthesis. It prefers evidence that matches
+the trip, route, carrier, date, or risk domain. This is intentionally not an LLM
+reranker; it keeps the cost model predictable and reduces noisy evidence before
+the final synthesis call.
 
 ## Output Contract
 
@@ -149,7 +173,8 @@ for two things:
 
 The project also uses LangSmith-hosted LLM-as-judge evaluators for hallucination
 and answer relevance. Those evaluators are configured in the LangSmith UI, not
-version-controlled in this repo.
+version-controlled in this repo. `eval_results.py` pulls those evaluator scores
+back down for a tagged benchmark run.
 
 ## API
 
@@ -242,40 +267,30 @@ workflows.
 Run the routed benchmark:
 
 ```bash
-python benchmark.py --run-id june-08-v1
+python benchmark.py --run-id my-run-id
 ```
 
 Run the original agent sample, then compare matching LangSmith traces:
 
 ```bash
-python baseline.py --run-id june-08-v1
-python benchmark.py --run-id june-08-v1
-python compare.py --run-id june-08-v1
+python baseline.py --run-id my-run-id
+python benchmark.py --run-id my-run-id
+python compare.py --run-id my-run-id
 ```
 
 The comparison script matches baseline and routed traces by `run_id` and
 `case_id`, then reports LLM-call counts, tool-call counts, and latency.
 
-### Historical Results
+Pull evaluator results for a routed benchmark run:
 
-These numbers are from the June 8 routing build. They are useful as the
-before/after evidence for the original routing change, but they predate later
-schema and grounding edits. Re-run `baseline.py`, `benchmark.py`, and
-`compare.py` with a shared run ID to reproduce current numbers.
+```bash
+python eval_results.py --run-id my-run-id
+```
 
-| Metric        | Baseline ReAct | Routed graph | Change |
-|---------------|----------------|--------------|--------|
-| Avg LLM calls | 3.0            | 2.0          | -33%   |
-| Avg tool calls| 3.22           | 2.0          | -38%   |
-| Avg latency   | 31.4s          | 26.8s        | -15%   |
-
-Routing agreement from the same development sequence:
-
-| Run        | Agreement | Notes                                      |
-|------------|-----------|--------------------------------------------|
-| june-08-v1 | 71%       | Initial classifier                         |
-| june-08-v2 | 84%       | Classifier prompt tightened                |
-| june-08-v3 | 80%       | Context-engineering pass; expected variance |
+For routing agreement, call-count, latency, and evaluator results, see
+[TECHNICAL_STATEMENT.md](./TECHNICAL_STATEMENT.md). Regenerate them against a
+shared run ID with `baseline.py` / `benchmark.py` / `compare.py` (calls and
+latency) and `eval_results.py` (evaluator scores).
 
 ## Tests
 
@@ -291,6 +306,8 @@ The tests check:
 - each route fires the expected tools once
 - readiness search parameters are computed per request
 - trip context reaches synthesis
+- under-specified readiness queries are enriched from trip context
+- search and evidence blocks are ranked before extract/crawl/synthesis
 - the report schema uses evidence-linked risk/recommendation objects
 - policy fields stay out of the LLM output contract
 
@@ -299,15 +316,15 @@ The tests check:
 This is a focused routing and evaluation prototype, not a full travel platform.
 The main gaps are:
 
-- Under-specified readiness queries can retrieve generic sources. Trip-aware
-  query construction is future work. For example, a vague query with trip
-  context should be rewritten to include the destination, carriers, dates, and
-  relevant risk domains before search.
 - The response schema now emits evidence-linked facts, but customer-specific
   actions still need a deterministic policy layer for `trip_status`, owner,
   priority, and SLA.
-- The crawl node currently crawls the first search result. A production version
-  should score source quality before choosing what to crawl.
+- The relevance ranker is deliberately lightweight. A production version should
+  use stronger source-quality signals and richer place/airport aliases before
+  choosing what to extract or crawl.
+- Simple factual queries still return the same full report schema as complex
+  travel-risk queries. A production API would likely use a lighter response
+  contract for the simple route.
 - `/travel/readiness` is a one-time check. Continuous monitoring would require
   persisted trip state, scheduled checks, and diffing against prior results.
 - LangSmith evaluator configuration lives in the UI. A production setup should

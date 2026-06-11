@@ -273,3 +273,124 @@ def test_report_schema_uses_evidence_linked_operational_objects():
     assert dumped["risks"][0]["category"] == "transport"
     assert "owner" not in dumped["recommendations"][0]
     assert "deadline" not in dumped["recommendations"][0]
+
+
+# ---------------------------------------------------------------------------
+# 4. Trip-aware query construction — readiness + trip enriches the search text
+# ---------------------------------------------------------------------------
+def test_readiness_trip_enriches_vague_query(monkeypatch):
+    _, _, search, _, _ = _wire(monkeypatch, "research")
+    app_v2.travel_graph.invoke(
+        {"query": "what changed since booking?", "workflow": "readiness", "trip_context": SAMPLE_TRIP}
+    )
+    q = search.calls[0]["query"]
+    assert q.startswith("what changed since booking?")   # original preserved verbatim
+    assert "JFK" in q and "LHR" in q                      # route appended
+    assert "British Airways" in q                         # carrier appended
+    assert "2026-06-15" in q                              # depart date appended
+
+
+def test_already_mentioned_terms_not_duplicated(monkeypatch):
+    _, _, search, _, _ = _wire(monkeypatch, "research")
+    app_v2.travel_graph.invoke(
+        {"query": "British Airways status on 2026-06-15?", "workflow": "readiness", "trip_context": SAMPLE_TRIP}
+    )
+    q = search.calls[0]["query"]
+    assert q.count("British Airways") == 1                # not re-appended
+    assert q.count("2026-06-15") == 1
+
+
+def test_deep_readiness_adds_risk_domain_terms(monkeypatch):
+    _, _, search, _, _ = _wire(monkeypatch, "deep")
+    app_v2.travel_graph.invoke(
+        {"query": "monitor this trip", "workflow": "readiness", "trip_context": SAMPLE_TRIP}
+    )
+    q = search.calls[0]["query"]
+    assert "strikes" in q and "entry requirements" in q   # broad risk terms on deep
+
+
+def test_narrow_readiness_omits_risk_domain_terms(monkeypatch):
+    _, _, search, _, _ = _wire(monkeypatch, "research")
+    app_v2.travel_graph.invoke(
+        {"query": "monitor this trip", "workflow": "readiness", "trip_context": SAMPLE_TRIP}
+    )
+    q = search.calls[0]["query"]
+    assert "strikes" not in q                             # risk terms are deep-only
+    assert "LHR" in q                                     # ...but identity terms still added
+
+
+def test_brief_workflow_does_not_enrich(monkeypatch):
+    _, _, search, _, _ = _wire(monkeypatch, "research")
+    app_v2.travel_graph.invoke(
+        {"query": "compare options", "workflow": "brief", "trip_context": SAMPLE_TRIP}
+    )
+    assert search.calls[0]["query"] == "compare options"  # untouched on brief
+
+
+# ---------------------------------------------------------------------------
+# 5. Deterministic evidence ranking — prefer query/trip-relevant sources
+# ---------------------------------------------------------------------------
+def test_search_urls_are_ranked_before_extract_and_crawl(monkeypatch):
+    _, _, search, extract, crawl = _wire(monkeypatch, "deep")
+    search._return_value = {
+        "results": [
+            {
+                "url": "https://generic.example/schengen",
+                "content": "Schengen border processing delays for continental Europe.",
+            },
+            {
+                "url": "https://airline.example/lhr",
+                "content": "British Airways reports JFK to LHR disruption on 2026-06-15.",
+            },
+        ]
+    }
+
+    app_v2.travel_graph.invoke(
+        {
+            "query": "Monitor all disruption risks for this trip",
+            "workflow": "readiness",
+            "trip_context": SAMPLE_TRIP,
+        }
+    )
+
+    assert extract.calls[0]["urls"][0] == "https://airline.example/lhr"
+    assert crawl.calls[0]["url"] == "https://airline.example/lhr"
+
+
+def test_synthesis_drops_zero_signal_evidence_when_relevant_blocks_exist():
+    state = {
+        "query": "Monitor all disruption risks for this trip",
+        "workflow": "readiness",
+        "query_type": "deep",
+        "trip_context": SAMPLE_TRIP,
+    }
+    blocks = app_v2._format_results(
+        [
+            {
+                "url": "https://generic.example/world-cup",
+                "content": "Mexico World Cup tourism advice and amusement park updates.",
+            },
+            {
+                "url": "https://airline.example/lhr",
+                "content": "British Airways JFK LHR cancellation notice for June travel.",
+            },
+        ],
+        cap=500,
+        state=state,
+    )
+
+    joined = "\n".join(blocks)
+    assert "airline.example/lhr" in joined
+    assert "world-cup" not in joined
+
+
+def test_evidence_ranking_keeps_original_order_when_no_signal_exists():
+    state = {
+        "query": "q",
+        "workflow": "brief",
+        "query_type": "simple",
+        "trip_context": None,
+    }
+    results = [{"url": "https://a.example"}, {"url": "https://b.example"}]
+
+    assert app_v2._rank_results(results, state) == results

@@ -16,6 +16,7 @@ it's a mock standing in for that upstream source.
 """
 import json
 import os
+import re
 from typing import Literal, TypedDict
 
 from dotenv import load_dotenv
@@ -58,8 +59,15 @@ crawl_tool = TavilyCrawl(api_key=TAVILY_API_KEY, limit=5)  # capped for cost con
 SYNTH_MODEL = os.getenv("VAICATION_SYNTH_MODEL", "gpt-5-mini")
 CLASSIFIER_MODEL = os.getenv("VAICATION_CLASSIFIER_MODEL", "gpt-5-mini")
 
-llm = ChatOpenAI(model=SYNTH_MODEL, api_key=OPENAI_API_KEY)
-classifier_base = ChatOpenAI(model=CLASSIFIER_MODEL, api_key=OPENAI_API_KEY)
+# Traces showed synthesis is the main latency cost, not Tavily retrieval.
+# Keep the report model on low reasoning effort and the 3-way classifier on
+# minimal effort; both tasks are bounded by retrieved evidence and schema rules.
+llm = ChatOpenAI(model=SYNTH_MODEL, api_key=OPENAI_API_KEY, reasoning_effort="low")
+classifier_base = ChatOpenAI(
+    model=CLASSIFIER_MODEL,
+    api_key=OPENAI_API_KEY,
+    reasoning_effort="minimal",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +303,60 @@ def _readiness_search_params(state: TravelState) -> dict:
     return params
 
 
+# ---------------------------------------------------------------------------
+# Trip-aware query construction
+# ---------------------------------------------------------------------------
+# An under-specified readiness query ("what changed since we booked?") carries
+# no route, carrier, or date terms, so search returns generic travel articles
+# even though trip_context holds the specifics. We append the trip's own terms
+# to the query text — but only the ones the user didn't already say — and broad
+# risk-domain terms only on the deep tier (multi-domain by definition; narrow
+# tiers stay scoped to the user's single topic).
+#
+# Deliberately kept basic: deterministic templating, no extra LLM call, in
+# keeping with the routing layer's cost rationale. Two known, accepted
+# simplifications, left as the documented "make it great" follow-up:
+#   - dates go in as ISO ("2026-06-15"); news phrases them as "June 15", so the
+#     date terms retrieve less than the route/carrier terms.
+#   - `_missing` is a substring check, so "American" already in the query won't
+#     suppress appending "American Airlines" — it may add a near-duplicate term.
+def _missing(query: str, term: str | None) -> bool:
+    """True if `term` is set and not already present in the query (case-insensitive)."""
+    return bool(term) and term.lower() not in query.lower()
+
+
+def _enriched_search_query(state: TravelState) -> str:
+    """Append the booked trip's identity terms (and, on deep, risk domains) to a
+    readiness query — only the terms the user hasn't already mentioned.
+
+    No-op for the brief workflow or when no trip is supplied, so every non-trip
+    path (including the entire benchmark set) searches exactly as before.
+    """
+    query = state["query"]
+    trip = state.get("trip_context")
+    if state["workflow"] != "readiness" or not trip:
+        return query
+
+    identity_terms = [
+        trip.get("origin"),
+        trip.get("destination"),
+        trip.get("depart_date"),
+        trip.get("return_date"),
+        trip.get("hotel"),
+        *trip.get("carriers", []),
+    ]
+    additions = [t for t in identity_terms if _missing(query, t)]
+
+    # Broad risk-domain terms only on deep, which assesses many domains at once.
+    if state.get("query_type") == "deep":
+        additions.append(
+            "travel disruptions airport delays cancellations strikes weather "
+            "safety entry requirements"
+        )
+
+    return " ".join([query, *additions])
+
+
 # Worked examples that anchor the slippery boundaries — especially research vs
 # deep, where the classifier was flip-flopping. Giving the model a few labeled
 # cases to pattern-match against makes borderline calls far more consistent than
@@ -360,17 +422,171 @@ def run_search(state: TravelState) -> dict:
     """Every path runs exactly one search — the cheapest read on 'what's true now'.
 
     Params are assembled at call time (not baked into the tool) so each request
-    gets the scoping its workflow and trip warrant.
+    gets the scoping its workflow and trip warrant. The query text itself is
+    enriched from the trip on readiness so an under-specified question still
+    retrieves trip-specific sources (see _enriched_search_query).
     """
-    params = {"query": state["query"]}
+    params = {"query": _enriched_search_query(state)}
     if state["workflow"] == "readiness":
         params.update(_readiness_search_params(state))
     return {"search_results": search_tool.invoke(params)}
 
 
+_STOPWORDS = {
+    "about", "across", "affect", "affecting", "after", "against", "airport",
+    "already", "also", "business", "brief", "build", "check", "conditions",
+    "considering", "could", "current", "does", "every", "executive", "focus",
+    "from", "given", "have", "including", "into", "major", "monitor", "next",
+    "planned", "readiness", "right", "short", "should", "since", "team",
+    "this", "travel", "traveler", "travelers", "trip", "week", "what", "when",
+    "where", "with", "would",
+}
+
+_RISK_TERMS = {
+    "advisory", "advisories", "cancellation", "cancellations", "delay",
+    "delays", "demand", "entry", "health", "hotel", "logistics", "protest",
+    "protests", "safety", "security", "strike", "strikes", "transport",
+    "visa", "weather",
+}
+
+_LOCATION_ALIASES = {
+    "new york": ["new york", "nyc", "jfk", "lga", "ewr"],
+    "jfk": ["jfk", "new york", "nyc"],
+    "lga": ["lga", "new york", "nyc"],
+    "ewr": ["ewr", "newark", "new york", "nyc"],
+    "london": ["london", "lhr", "heathrow", "gatwick", "city airport", "uk", "united kingdom"],
+    "lhr": ["lhr", "heathrow", "london", "uk", "united kingdom"],
+    "lgw": ["lgw", "gatwick", "london", "uk", "united kingdom"],
+    "austin": ["austin", "aus", "austin-bergstrom"],
+    "aus": ["aus", "austin", "austin-bergstrom"],
+    "tokyo": ["tokyo", "hnd", "haneda", "nrt", "narita"],
+    "hnd": ["hnd", "haneda", "tokyo"],
+    "nrt": ["nrt", "narita", "tokyo"],
+    "paris": ["paris", "cdg", "orly"],
+    "cdg": ["cdg", "paris"],
+}
+
+_MONTHS = {
+    "01": "january", "02": "february", "03": "march", "04": "april",
+    "05": "may", "06": "june", "07": "july", "08": "august",
+    "09": "september", "10": "october", "11": "november", "12": "december",
+}
+
+
+def _normalize(text: str) -> str:
+    """Lowercase text with punctuation collapsed so cheap matching is stable."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", text.lower())).strip()
+
+
+def _term_variants(term: str | None) -> list[str]:
+    """Return simple aliases for a route/location term."""
+    if not term:
+        return []
+    normalized = _normalize(term)
+    variants = [normalized]
+    variants.extend(_LOCATION_ALIASES.get(normalized, []))
+    return list(dict.fromkeys(v for v in variants if v))
+
+
+def _date_terms(date_value: str | None) -> list[str]:
+    """Return ISO and month-name forms for a YYYY-MM-DD-ish date string."""
+    if not date_value:
+        return []
+    terms = [date_value]
+    parts = date_value.split("-")
+    if len(parts) >= 2 and (month := _MONTHS.get(parts[1])):
+        terms.append(month)
+    return terms
+
+
+def _relevance_terms(state: TravelState) -> dict[str, list[str]]:
+    """Build deterministic signals used to rank retrieved evidence.
+
+    This is intentionally lexical rather than LLM-based: the goal is to prefer
+    sources that mention the trip/query surface area before synthesis, without
+    adding another variable-cost reasoning step.
+    """
+    query = state.get("query", "")
+    query_norm = _normalize(query)
+    trip = state.get("trip_context") or {}
+
+    location_terms: list[str] = []
+    for field in ("origin", "destination", "hotel"):
+        location_terms.extend(_term_variants(trip.get(field)))
+
+    carrier_terms: list[str] = []
+    for carrier in trip.get("carriers", []):
+        carrier_terms.extend(_term_variants(carrier))
+
+    date_terms: list[str] = []
+    for field in ("depart_date", "return_date", "booked_at"):
+        date_terms.extend(_date_terms(trip.get(field)))
+
+    risk_terms = [term for term in _RISK_TERMS if term in query_norm]
+    if state.get("query_type") == "deep" and state.get("workflow") == "readiness":
+        risk_terms.extend(["delay", "cancellation", "strike", "weather", "safety", "entry"])
+
+    query_terms = [
+        word for word in re.findall(r"[a-z0-9]+", query_norm)
+        if len(word) > 3 and word not in _STOPWORDS
+    ]
+
+    return {
+        "location": list(dict.fromkeys(location_terms)),
+        "carrier": list(dict.fromkeys(carrier_terms)),
+        "date": list(dict.fromkeys(_normalize(t) for t in date_terms)),
+        "risk": list(dict.fromkeys(risk_terms)),
+        "query": list(dict.fromkeys(query_terms)),
+    }
+
+
+def _text_for_relevance(item) -> str:
+    """Flatten the fields worth scoring from a Tavily result or evidence block."""
+    if isinstance(item, str):
+        return item
+    if not isinstance(item, dict):
+        return ""
+    return " ".join(
+        str(item.get(field, ""))
+        for field in ("url", "title", "content", "raw_content")
+        if item.get(field)
+    )
+
+
+def _score_relevance(item, terms: dict[str, list[str]]) -> int:
+    """Weighted lexical score: trip identity beats generic query overlap."""
+    text = _normalize(_text_for_relevance(item))
+    if not text:
+        return 0
+
+    score = 0
+    score += 4 * sum(1 for term in terms["location"] if term in text)
+    score += 4 * sum(1 for term in terms["carrier"] if term in text)
+    score += 2 * sum(1 for term in terms["date"] if term in text)
+    score += 2 * sum(1 for term in terms["risk"] if term in text)
+    score += min(6, sum(1 for term in terms["query"] if term in text))
+    return score
+
+
+def _rank_results(results, state: TravelState):
+    """Prefer source items with stronger query/trip overlap; keep weak broad sets."""
+    if isinstance(results, str):
+        results = [results]
+    items = list(results or [])
+    if not items:
+        return []
+
+    terms = _relevance_terms(state)
+    scored = [(_score_relevance(item, terms), index, item) for index, item in enumerate(items)]
+    if not any(score for score, _, _ in scored):
+        return items
+    return [item for score, _, item in sorted(scored, key=lambda row: (-row[0], row[1])) if score > 0]
+
+
 def _result_urls(state: TravelState) -> list[str]:
-    """URLs from the search step, skipping any results missing one."""
-    return [u for r in state["search_results"].get("results", []) if (u := r.get("url"))]
+    """URLs from the ranked search step, skipping any results missing one."""
+    results = _rank_results(state["search_results"].get("results", []), state)
+    return [u for r in results if isinstance(r, dict) and (u := r.get("url"))]
 
 
 def run_extract(state: TravelState) -> dict:
@@ -398,17 +614,39 @@ def run_crawl(state: TravelState) -> dict:
 _SNIPPET_CAP = 800       # per clean search snippet
 _PAGE_CAP = 2500         # per extracted/crawled page
 _MAX_PAGES = 3           # extract/crawl pages fed to synthesis
-_EVIDENCE_CAP = 16000    # overall ceiling on the evidence block
+_EVIDENCE_CAP = 12000    # overall ceiling on the evidence block
 
 
-def _format_results(results: list[dict], cap: int, limit: int | None = None) -> list[str]:
+def _result_items(payload):
+    """Return result items from a Tavily payload, preserving string evidence."""
+    if isinstance(payload, dict):
+        results = payload.get("results")
+        if results is None:
+            return [payload]
+        return results if isinstance(results, list) else [results]
+    return payload
+
+
+def _format_results(results, cap: int, limit: int | None = None, state: TravelState | None = None) -> list[str]:
     """Pull only (url, main text) from each result, capped — never the raw dict.
 
     Prefers the clean `content` snippet; falls back to `raw_content` (full page)
     when that's all a tool returns, trimmed to `cap` to shed sidebar/nav noise.
     """
+    if state is not None:
+        results = _rank_results(results, state)
+    elif isinstance(results, str):
+        results = [results]
+
     blocks = []
     for r in (results or [])[: limit or len(results or [])]:
+        if isinstance(r, str):
+            text = r.strip()
+            if text:
+                blocks.append(f"[no url]\n{text[:cap]}")
+            continue
+        if not isinstance(r, dict):
+            continue
         url = r.get("url", "")
         text = (r.get("content") or r.get("raw_content") or "").strip()
         if text:
@@ -419,9 +657,9 @@ def _format_results(results: list[dict], cap: int, limit: int | None = None) -> 
 def synthesize(state: TravelState) -> dict:
     """Turn whatever evidence was gathered into the final structured report."""
     parts: list[str] = []
-    parts += _format_results(state.get("search_results", {}).get("results", []), _SNIPPET_CAP)
-    parts += _format_results(state.get("extract_results", {}).get("results", []), _PAGE_CAP, _MAX_PAGES)
-    parts += _format_results(state.get("crawl_results", {}).get("results", []), _PAGE_CAP, _MAX_PAGES)
+    parts += _format_results(_result_items(state.get("search_results", {})), _SNIPPET_CAP, state=state)
+    parts += _format_results(_result_items(state.get("extract_results", {})), _PAGE_CAP, _MAX_PAGES, state)
+    parts += _format_results(_result_items(state.get("crawl_results", {})), _PAGE_CAP, _MAX_PAGES, state)
     evidence = "\n\n".join(parts)[:_EVIDENCE_CAP]
 
     # When a booked trip is present, hand the model the baseline explicitly so it
@@ -443,6 +681,11 @@ def synthesize(state: TravelState) -> dict:
         f"Evidence gathered from live web retrieval:\n{evidence}\n\n"
         "Produce a structured report grounded only in this evidence.\n"
         "GROUNDING RULES — follow strictly:\n"
+        "- Use only evidence that directly matches the requested location, route, "
+        "carrier, date, or risk domain. Ignore unrelated travel sources, even if "
+        "they are otherwise factual. Only include risks and recommendations tied "
+        "to that matching evidence. If no relevant evidence is retrieved, say so "
+        "clearly rather than filling the report with generic or off-topic risks.\n"
         "- Every claim, risk, and severity rating must be traceable to a specific "
         "item in the evidence above. Do not add facts from prior knowledge.\n"
         "- For every risk and recommendation object, set evidence_url to the exact "
@@ -456,6 +699,15 @@ def synthesize(state: TravelState) -> dict:
         "- Do not infer cause and effect. If a source reports two facts, do not "
         "claim one caused, triggered, or prompted the other unless the source "
         "says so explicitly.\n"
+        "- Only assign severity low, medium, or high when the source explicitly "
+        "describes impact, disruption, risk level, cancellations, delays, "
+        "restrictions, violence, weather warnings, or operational consequences. "
+        "If the evidence is indirect, generic, historical, trend-based, or merely "
+        "adjacent to the trip, either omit the risk or set severity to unknown.\n"
+        "- Do not turn general travel trends into trip-specific risks. Do not "
+        "claim event overlap, hotel-demand pressure, safety spillover, border "
+        "delays, or transport disruption unless the source explicitly states "
+        "that impact for the relevant place, route, date, or carrier.\n"
         "- Recommendations may use only the booked trip details provided and the "
         "evidence above. Do not assume traveler count, party composition, employer "
         "or agency procedures, or any logistic detail that was not given.\n"
@@ -463,9 +715,12 @@ def synthesize(state: TravelState) -> dict:
         "safety, weather, health, entry requirements), say so explicitly — e.g. "
         "'No retrieved source addresses weather for this period' — rather than "
         "inferring or supplying general expectations.\n"
-        "- A shorter report that is fully grounded is better than a complete-"
-        "looking one that speculates.\n"
-        "- Be concise: at most 5 key findings, 5 risks, and 5 recommendations. "
+        "- Use cautious wording: 'retrieved evidence reports...' or 'no retrieved "
+        "source establishes...' instead of unsupported phrases such as likely, "
+        "could cause, may affect, or expected to.\n"
+        "- A shorter report that omits weak claims is better than a complete-"
+        "looking one that upgrades weak evidence into operational conclusions.\n"
+        "- Be concise: at most 3 key findings, 3 risks, and 3 recommendations. "
         "State each point once; do not pad or repeat."
     )
     return {"report": report.model_dump()}
